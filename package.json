@@ -1,0 +1,16 @@
+{
+  "name": "partition-pg",
+  "version": "0.0.1",
+  "description": "This package helps you to create and maintain your partitions in postgres without worying about partition maintenance.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "laukik",
+    "partition",
+    "postgres"
+  ],
+  "author": "laukik",
+  "license": "SEE LICENSE IN license.md"
+}
