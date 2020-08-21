@@ -12,5 +12,11 @@
     "postgres"
   ],
   "author": "laukik",
-  "license": "SEE LICENSE IN license.md"
+  "license": "SEE LICENSE IN license.md",
+  "dependencies": {},
+  "devDependencies": {
+    "chai": "^4.2.0",
+    "mocha": "^8.1.1",
+    "nyc": "^15.1.0"
+  }
 }
