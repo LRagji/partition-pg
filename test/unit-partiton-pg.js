@@ -241,7 +241,6 @@ describe('PartionPg Unit Tests', function () {
             WHERE "time" BETWEEN 0 AND 998  AND  "quality" = 1 and "tagid" IN VALUES ("2","3","4")
             ;`;
 
-        await _target.load(_staticSampleType);
         let filters = [
             {
                 "name": "quality",
@@ -258,10 +257,48 @@ describe('PartionPg Unit Tests', function () {
                 }
             }
         ];
+        await _target.load(_staticSampleType);
         let selectiveColumns=[
             _target.columnsNames.findIndex(c=>c==="tagid")
         ];
         await _target.readRange(0, 998, selectiveColumns, filters);
+        assert.deepEqual(_dbWriterObject.any.notCalled, true);
+        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql);
+    });
+
+    it('should execute the correct sql with "equal-to" and "in" filters combined with selective columns, outside range values for readRange', async function () {
+        let expectedSql = `
+            SELECT "tagid" 
+            FROM "Anukram"."Raw_0_999"
+            WHERE  "quality" = 1 and "tagid" IN VALUES ("2","3","4") 
+            UNION ALL
+            SELECT "tagid" 
+            FROM "Anukram"."Raw_1000_1999"
+            WHERE "time" BETWEEN 0 AND 1004  AND  "quality" = 1 and "tagid" IN VALUES ("2","3","4")
+            ;`;
+
+        let filters = [
+            {
+                "name": "quality",
+                "operator": "=",
+                "values": [1]
+            },
+            {
+                "name": "tagid",
+                "operator": "IN",
+                "values": [2, 3, 4],
+                "combine": {
+                    "condition-index": 0,
+                    "using": "and"
+                }
+            }
+        ];
+        await _target.load(_staticSampleType);
+        let selectiveColumns=[
+            _target.columnsNames.findIndex(c=>c==="tagid")
+        ];
+        await _target.readRange(0, 1004, selectiveColumns, filters);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
         assert.deepEqual(_dbReaderObject.any.calledOnce, true);
         assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql);
