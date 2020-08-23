@@ -93,7 +93,7 @@ module.exports = class PartionPg {
         let groupKeyCursor = groupKeyIterator.next();
         while (!groupKeyCursor.done) {
             let sql = this._generateBulkInsert(groupKeyCursor.value, groups.get(groupKeyCursor.value));
-            await this._dbWriter.none(sql);
+            await this._dbWriter.none(sql);// This is sequential cause the write speed is shared even if run it in parallel it will take same time.
             groupKeyCursor = groupKeyIterator.next();
         }
     }
