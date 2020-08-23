@@ -4,7 +4,8 @@
   "description": "This package helps you to create and maintain your partitions in postgres without worying about partition maintenance.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "./node_modules/mocha/bin/mocha",
+    "coverage": "npx nyc --reporter=lcov --reporter=text-summary npm run test"
   },
   "keywords": [
     "laukik",
@@ -13,7 +14,9 @@
   ],
   "author": "laukik",
   "license": "SEE LICENSE IN license.md",
-  "dependencies": {},
+  "dependencies": {
+    "sinon": "^9.0.3"
+  },
   "devDependencies": {
     "chai": "^4.2.0",
     "mocha": "^8.1.1",

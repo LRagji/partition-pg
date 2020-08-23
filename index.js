@@ -15,11 +15,19 @@
 module.exports = class PartionPg {
     constructor(pgpReaderConnection, pgpWriterConnection, schemaName, name) {
         //Private functions and mebers
-        this._checkForSimilarConnection = this._checkForSimilarConnection.bind(this);
-        this._generateSqlTableColumns = this._generateSqlTableColumns.bind(this);
-        this._generateSqlIndexColumns = this._generateSqlIndexColumns.bind(this);
+        this._generateWhereClause = this._generateWhereClause.bind(this);
         this._generateBulkInsert = this._generateBulkInsert.bind(this);
+        this._groupByPartionKey = this._groupByPartionKey.bind(this);
+        this._calculateFrameStart = this._calculateFrameStart.bind(this);
+        this._calculateFrameEndFromStart = this._calculateFrameEndFromStart.bind(this);
+        this._calculateFrameEnd = this._calculateFrameEnd.bind(this);
+        this._generateSqlTableColumns = this._generateSqlTableColumns.bind(this);
         this._generatePrimaryKeyConstraintColumns = this._generatePrimaryKeyConstraintColumns.bind(this);
+        this._generateSqlIndexColumns = this._generateSqlIndexColumns.bind(this);
+        this._calculateFrameStart = this._calculateFrameStart.bind(this);
+        this._calculateFrameStart = this._calculateFrameStart.bind(this);
+        this._calculateFrameStart = this._calculateFrameStart.bind(this);
+
         this.filterOperators = new Map();
         this.filterOperators.set("=", function (operands) { return operands[0] });
         this.filterOperators.set("IN", function (operands) { return `VALUES (${operands.reduce((a, e) => a + `"${e}",`, "").slice(0, -1)})` });
@@ -29,22 +37,22 @@ module.exports = class PartionPg {
         this.define = this.define.bind(this);
         this.upsert = this.upsert.bind(this);
         this.readRange = this.readRange.bind(this);
-        this.readIn = this.readIn.bind(this);
+        //this.readIn = this.readIn.bind(this);
 
         //Constructor code
         //this._pgp = pgp;
         this._dbReader = pgpReaderConnection;//this._pgp(readerConnectionstring);
         this._dbWriter = pgpWriterConnection;//this._checkForSimilarConnection(readerConnectionstring, writerConnectionstring, this._dbReader);
-        this._schemaName = schemaName;
-        this._name = name;
-        this._columnsNames = [];
+        this.schemaName = schemaName;
+        this.tableName = name;
+        this.columnsNames = [];
         this._partitionKey = undefined;
     }
 
     load(definition) {
         let index = definition.findIndex(c => c.key != undefined);
         this._partitionKey = { "index": index, "range": parseInt(definition[index].key.range) };
-        this._columnsNames = definition.map(e => e.name);
+        this.columnsNames = definition.map(e => e.name);
 
     }
 
@@ -59,18 +67,18 @@ module.exports = class PartionPg {
         indexColumns = indexColumns.slice(0, -1);
 
 
-        let unsafeSql = `CREATE FUNCTION "${this._schemaName}"."${"auto_part_" + this._name}"(IN name TEXT) RETURNS VOID
+        let unsafeSql = `CREATE FUNCTION "${this.schemaName}"."${"auto_part_" + this.tableName}"(IN name TEXT) RETURNS VOID
         LANGUAGE 'plpgsql'
         AS $$
         DECLARE
-        table_name TEXT := '${this._name}_'|| name;
-        index_name TEXT := '${this._name}_'|| name||'_idx';
-        primarykey_name TEXT := '${this._name}_'|| name||'_pk';
+        table_name TEXT := '${this.tableName}_'|| name;
+        index_name TEXT := table_name ||'_idx';
+        primarykey_name TEXT := table_name ||'_pk';
         dsql TEXT;
         BEGIN
-        dsql:= 'CREATE TABLE IF NOT EXISTS "${this._schemaName}".'|| quote_ident(table_name) || '(${tableColumns} ,CONSTRAINT '|| quote_ident(primarykey_name)||' PRIMARY KEY (${primaryKeyColumns}))';
+        dsql:= 'CREATE TABLE IF NOT EXISTS "${this.schemaName}".'|| quote_ident(table_name) || '(${tableColumns} ,CONSTRAINT '|| quote_ident(primarykey_name)||' PRIMARY KEY (${primaryKeyColumns}))';
         EXECUTE dsql;
-        dsql:= 'CREATE INDEX IF NOT EXISTS '|| quote_ident(index_name) ||' ON "${this._schemaName}".' || quote_ident(table_name) || ' (${indexColumns})';
+        dsql:= 'CREATE INDEX IF NOT EXISTS '|| quote_ident(index_name) ||' ON "${this.schemaName}".' || quote_ident(table_name) || ' (${indexColumns})';
         EXECUTE dsql;
         END$$;`;
 
@@ -81,7 +89,7 @@ module.exports = class PartionPg {
 
     async upsert(payload) {
         let groups = payload.reduce(this._groupByPartionKey, new Map());
-        let groupKeyIterator = groups.key();
+        let groupKeyIterator = groups.keys();
         let groupKeyCursor = groupKeyIterator.next();
         while (!groupKeyCursor.done) {
             let sql = this._generateBulkInsert(groupKeyCursor.value, groups.get(groupKeyCursor.value));
@@ -107,87 +115,110 @@ module.exports = class PartionPg {
         let CalculatedFrom = this._calculateFrameStart(from, width);
         let CalculatedTo = this._calculateFrameEnd(to, width);
 
-        let columns = columnIndexes.reduce((acc, i) => acc + `"${this._columnsNames[i]}",`, "");
-        columns = columns === "" ? "*" : columns.slice(0, -1);
+        let columns = columnIndexes.reduce((acc, i) => acc + `"${this.columnsNames[i]}",`, "");
+        columns = columns === "" ? this.columnsNames.reduce((acc, e) => acc + `"${e}",`, "").slice(0, -1) : columns.slice(0, -1);
 
         let whereCondition = this._generateWhereClause(filters);
 
         let sql = "";
-        for (CalculatedFrom < CalculatedTo; CalculatedFrom += width;) {
-            let tableName = `${CalculatedFrom}_${this._calculateFrameEndFromStart(CalculatedFrom, width)}"`;
-            sql = `
-            SELECT ${columns} 
-            FROM "${this._schemaName}"."${this._name}_${tableName}"
-            WHERE "${ this._columnsNames[this._partitionKey.index]}" BETWEEN ${CalculatedFrom} AND ${CalculatedTo} ${whereCondition.length > 0 ? (" AND " + whereCondition) : ""}
-            UNION ALL`;
-        }
-        sql = sql.slice(0, -9) + ";";
-
-        return await this._dbReader.any(sql);
-
-    }
-
-    async readIn(values, columnIndexes = [], filters = []) {
-        let width = this._partitionKey.range;
-        // if (from > to) [from, to] = [to, from];
-        // let CalculatedFrom = this._calculateFrameStart(from, width);
-        // let CalculatedTo = this._calculateFrameEnd(to, width);
-
-        let columns = columnIndexes.reduce((acc, i) => acc + `"${this._columnsNames[i]}",`, "");
-        columns = columns === "" ? "*" : columns.slice(0, -1);
-
-        let whereCondition = this._generateWhereClause(filters);
-
-        let combinedValues = values.reduce((acc, value) => {
-            let tableName = `${this._calculateFrameStart(value, width)}_${this._calculateFrameEnd(value, width)}"`;
-            if (acc.has(tableName)) {
-                acc.get(tableName).push(value);
+        while (CalculatedFrom < CalculatedTo) {
+            let whereClause = "";
+            if (CalculatedFrom >= from && this._calculateFrameEndFromStart(CalculatedFrom, width) <= to) {
+                whereClause = "";
             }
             else {
-                acc.set(tableName, [value]);
+                whereClause = `WHERE "${this.columnsNames[this._partitionKey.index]}" BETWEEN ${from} AND ${to} `;
             }
-            return acc;
-        }, new Map());
+            if (whereClause === "" && whereCondition != "") {//0 1
+                whereClause += `WHERE ${whereCondition} `;
+            }
+            // else if (whereClause === "" && whereCondition === "") {//0 0
+            //     whereClause = "";
+            // }
+            else if (whereClause != "" && whereCondition != "") {//1 1
+                whereClause += " AND " + whereCondition;
+            }
+            // else if (whereClause != "" && whereCondition === "") {//1 0
 
-        let sql = "";
-        combinedValues.forEach((tableValues, tableName) => {
-            sql = `
+            // }
+
+            let tableName = `${CalculatedFrom}_${this._calculateFrameEndFromStart(CalculatedFrom, width)}`;
+            sql += `
             SELECT ${columns} 
-            FROM "${this._schemaName}"."${this._name}_${tableName}"
-            WHERE "${ this._columnsNames[this._partitionKey.index]}" IN VALUES (${tableValues.join(",").slice(0, -1)}) AND ${CalculatedTo} ${whereCondition.length > 0 ? (" AND " + whereCondition) : ""}
+            FROM "${this.schemaName}"."${this.tableName}_${tableName}"
+            ${whereClause}
             UNION ALL`;
-        });
+            CalculatedFrom += width;
+        }
         sql = sql.slice(0, -9) + ";";
-
+        //WHERE "${ this.columnsNames[this._partitionKey.index]}" BETWEEN ${from} AND ${to} ${whereCondition.length > 0 ? (" AND " + whereCondition) : ""}
         return await this._dbReader.any(sql);
+
     }
 
+    // async readIn(values, columnIndexes = [], filters = []) {
+    //     let width = this._partitionKey.range;
+    //     // if (from > to) [from, to] = [to, from];
+    //     // let CalculatedFrom = this._calculateFrameStart(from, width);
+    //     // let CalculatedTo = this._calculateFrameEnd(to, width);
+
+    //     let columns = columnIndexes.reduce((acc, i) => acc + `"${this.columnsNames[i]}",`, "");
+    //     columns = columns === "" ? "*" : columns.slice(0, -1);
+
+    //     let whereCondition = this._generateWhereClause(filters);
+
+    //     let combinedValues = values.reduce((acc, value) => {
+    //         let tableName = `${this._calculateFrameStart(value, width)}_${this._calculateFrameEnd(value, width)}"`;
+    //         if (acc.has(tableName)) {
+    //             acc.get(tableName).push(value);
+    //         }
+    //         else {
+    //             acc.set(tableName, [value]);
+    //         }
+    //         return acc;
+    //     }, new Map());
+
+    //     let sql = "";
+    //     combinedValues.forEach((tableValues, tableName) => {
+    //         sql = `
+    //         SELECT ${columns} 
+    //         FROM "${this.schemaName}"."${this.tableName}_${tableName}"
+    //         WHERE "${ this.columnsNames[this._partitionKey.index]}" IN VALUES (${tableValues.join(",").slice(0, -1)}) AND ${CalculatedTo} ${whereCondition.length > 0 ? (" AND " + whereCondition) : ""}
+    //         UNION ALL`;
+    //     });
+    //     sql = sql.slice(0, -9) + ";";
+
+    //     return await this._dbReader.any(sql);
+    // }
+
     _generateWhereClause(filters) {
-        let whereClauses = filters.map(e => `"${e.name}" ${e.operator} ${this.filterOperators.get(e.operator)(e)}`);
         let firstCondition = filters.findIndex(e => e.combine == undefined);
-        filters.splice(firstCondition, 1);
+        if (firstCondition < 0) return "";
+        let nonDependentCondition = filters.splice(firstCondition, 1);
         filters = filters.sort((cA, cB) => parseInt(cA.combine["condition-index"]) - parseInt(cB.combine["condition-index"]));
+        filters.unshift(nonDependentCondition[0]);
         return filters.reduce((acc, condition) => {
-            if (condition.combine["condition-index"] != undefined) {
-                acc += ` ${condition.combine.using}  ${whereClauses[condition.combine["condition-index"]]} `;
+            if (condition.combine != undefined) {
+                acc += ` ${condition.combine.using} "${condition.name}" ${condition.operator} ${this.filterOperators.get(condition.operator)(condition.values)}`;
+            }
+            else{
+                acc += ` "${condition.name}" ${condition.operator} ${this.filterOperators.get(condition.operator)(condition.values)}`;
             }
             return acc;
-        }, whereClauses[firstCondition]);
+        }, "");
     }
 
     _generateBulkInsert(tableName, payload) {
-        let valuesString = payload.reduce((valuesString, element) => {
-            valuesString += `(${element.join(",")}),`;
-        }, "");
-        let columnNames = this._columnsNames.reduce((acc, e) => acc + `,"${e}",`, "");
+        let valuesString = payload.reduce((valuesString, element) => valuesString += `(${element.join(",")}),`, "");
+        let columnNames = this.columnsNames.reduce((acc, e) => acc + `"${e}",`, "");
         columnNames = columnNames.slice(0, -1);
-        let updateColumns = this._columnsNames.reduce((acc, e) => acc + `,"${e}"=EXCLUDED."${e}",`, "");
+        let updateColumns = this.columnsNames.reduce((acc, e) => acc + ` "${e}"=EXCLUDED."${e}",`, "");
         updateColumns = updateColumns.slice(0, -1);
 
-        return `SELECT "${this._schemaName}"."auto_part_${this._name}"(${tableName});
-        INSERT INTO "${this._schemaName}"."${this._name}_${tableName}" (${columnNames}) VALUES ${valuesString.slice(0, -1)}
-        ON CONFLICT ON CONSTRAINT "${this._name}_${tableName}_pk"
-	    DO UPDATE SET ${updateColumns};`;
+        return `SELECT "${this.schemaName}"."auto_part_${this.tableName}"('${tableName}');
+        INSERT INTO "${this.schemaName}"."${this.tableName}_${tableName}" (${columnNames}) VALUES ${valuesString.slice(0, -1)}
+        ON CONFLICT ON CONSTRAINT "${this.tableName}_${tableName}_pk"
+        DO UPDATE SET ${updateColumns};`;
     }
 
     _groupByPartionKey(groups, row) {
@@ -195,7 +226,7 @@ module.exports = class PartionPg {
         let width = this._partitionKey.range;
         let frameStart = this._calculateFrameStart(currentValue, width);
         let frameEnd = this._calculateFrameEndFromStart(frameStart, width)
-        let tableName = `${frameStart}_${frameEnd}"`;
+        let tableName = `${frameStart}_${frameEnd}`;
         if (groups.has(tableName)) {
             groups.get(tableName).push(row);
         }
@@ -248,16 +279,16 @@ module.exports = class PartionPg {
         return completeSql;
     }
 }
-const defaultConectionString = "postgres://postgres:@localhost:5432/postgres";
-let x = new PartionPg(defaultConectionString, defaultConectionString, "public", "laukik");
-x.define([
-    {
+// const defaultConectionString = "postgres://postgres:@localhost:5432/postgres";
+// let x = new PartionPg(defaultConectionString, defaultConectionString, "public", "laukik");
+// x.define([
+//     {
 
-        "name": "value",
-        "datatype": "bigint",
-        "filterable": { "sorted": "asc | desc" },
-        "key": {
-            "range": 10
-        }
-    }
-])
+//         "name": "value",
+//         "datatype": "bigint",
+//         "filterable": { "sorted": "asc | desc" },
+//         "key": {
+//             "range": 10
+//         }
+//     }
+// ])
