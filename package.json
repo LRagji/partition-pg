@@ -14,12 +14,11 @@
   ],
   "author": "laukik",
   "license": "SEE LICENSE IN license.md",
-  "dependencies": {
-    "sinon": "^9.0.3"
-  },
+  "dependencies": {},
   "devDependencies": {
     "chai": "^4.2.0",
     "mocha": "^8.1.1",
-    "nyc": "^15.1.0"
+    "nyc": "^15.1.0",
+    "sinon": "^9.0.3"
   }
 }

@@ -201,7 +201,7 @@ module.exports = class PartionPg {
             if (condition.combine != undefined) {
                 acc += ` ${condition.combine.using} "${condition.name}" ${condition.operator} ${this.filterOperators.get(condition.operator)(condition.values)}`;
             }
-            else{
+            else {
                 acc += ` "${condition.name}" ${condition.operator} ${this.filterOperators.get(condition.operator)(condition.values)}`;
             }
             return acc;
@@ -292,3 +292,54 @@ module.exports = class PartionPg {
 //         }
 //     }
 // ])
+
+//Bloom sort actually we need count min sketch for sorting as there can be duplicates test show fast sorting is equal faster.
+// let BloomFilter = require('bloomfilter').BloomFilter;
+
+// let hulkArray = []
+// let length = 20000000;
+// let min = 1598140800021;
+// let max = min + length
+// let maxActual = Number.MIN_VALUE, minActual = Number.MAX_VALUE;
+// console.time("Fill");
+// var bloom = new BloomFilter(
+//     length, // number of bits to allocate.
+//     16        // number of hash functions.
+// );
+// for (let index = 0; index < length; index++) {
+//     let timestamp = (Math.random() * (max - min) + min);
+//     if (maxActual < timestamp) maxActual = timestamp;
+//     if (minActual > timestamp) minActual = timestamp;
+//     // hulkArray.push({
+//     //     "TagId": (Math.random() * (1000000 - 1) + 1),
+//     //     "Timestamp": timestamp,
+//     //     "Value": max,
+//     //     "Quality": max
+//     // });
+//     hulkArray.push(timestamp);
+//     bloom.add(timestamp);
+// }
+// console.timeEnd("Fill");
+// console.log(`Min: ${minActual} Max: ${maxActual}`);
+// console.time("Sort");
+// let sortedHulkArray = [];
+// for (let index = minActual; index <= maxActual; index++) {
+//     if (bloom.test(index)) sortedHulkArray.push(index);
+// }
+// console.timeEnd("Sort");
+// console.log("Sorted Array Length: " + sortedHulkArray.length);
+// let s = require('fast-sort');
+
+// console.time("Fast Sort");
+// let actual = s(hulkArray).asc();
+// console.timeEnd("Fast Sort");
+// console.log(`Are they Equal in length actual: ${actual.length} bloom: ${sortedHulkArray.length} equal: ${actual.length === sortedHulkArray.length}`);
+// let areEqual = true;
+// for (let index = 0; index < actual.length; index++) {
+//     areEqual = actual[index] === sortedHulkArray[index] && areEqual;
+//     if (!areEqual) {
+//         console.log(`You screwed at ${index} actual: ${actual[index]} bloom: ${sortedHulkArray[index]}`);
+//         break;
+//     }
+// }
+// console.log("Are they Equal: " + areEqual);
