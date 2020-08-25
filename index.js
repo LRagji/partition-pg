@@ -27,6 +27,7 @@ module.exports = class PartionPg {
         this._calculateFrameStart = this._calculateFrameStart.bind(this);
         this._calculateFrameStart = this._calculateFrameStart.bind(this);
         this._calculateFrameStart = this._calculateFrameStart.bind(this);
+        this._combineResults = this._combineResults.bind(this);
 
         this.filterOperators = new Map();
         this.filterOperators.set("=", function (operands) { return operands[0] });
@@ -112,18 +113,18 @@ module.exports = class PartionPg {
 
         let width = this._partitionKey.range;
         if (from > to) [from, to] = [to, from];
-        let CalculatedFrom = this._calculateFrameStart(from, width);
-        let CalculatedTo = this._calculateFrameEnd(to, width);
+        let calculatedFrom = this._calculateFrameStart(from, width);
+        let calculatedTo = this._calculateFrameEnd(to, width);
 
         let columns = columnIndexes.reduce((acc, i) => acc + `"${this.columnsNames[i]}",`, "");
         columns = columns === "" ? this.columnsNames.reduce((acc, e) => acc + `"${e}",`, "").slice(0, -1) : columns.slice(0, -1);
 
         let whereCondition = this._generateWhereClause(filters);
 
-        let sql = "";
-        while (CalculatedFrom < CalculatedTo) {
+        let sqlStatements = [];
+        while (calculatedFrom < calculatedTo) {
             let whereClause = "";
-            if (CalculatedFrom >= from && this._calculateFrameEndFromStart(CalculatedFrom, width) <= to) {
+            if (calculatedFrom >= from && this._calculateFrameEndFromStart(calculatedFrom, width) <= to) {
                 whereClause = "";
             }
             else {
@@ -142,17 +143,17 @@ module.exports = class PartionPg {
 
             // }
 
-            let tableName = `${CalculatedFrom}_${this._calculateFrameEndFromStart(CalculatedFrom, width)}`;
-            sql += `
+            let tableName = `${calculatedFrom}_${this._calculateFrameEndFromStart(calculatedFrom, width)}`;
+            sqlStatements.push(`
             SELECT ${columns} 
             FROM "${this.schemaName}"."${this.tableName}_${tableName}"
-            ${whereClause}
-            UNION ALL`;
-            CalculatedFrom += width;
+            ${whereClause} ;`);
+
+            calculatedFrom += width;
         }
-        sql = sql.slice(0, -9) + ";";
-        //WHERE "${ this.columnsNames[this._partitionKey.index]}" BETWEEN ${from} AND ${to} ${whereCondition.length > 0 ? (" AND " + whereCondition) : ""}
-        return await this._dbReader.any(sql);
+
+        let resultsArray = await this._dbReader.multiple(sqlStatements);
+        return resultsArray.length > 0 ? resultsArray.reduce(this._combineResults) : [];
 
     }
 
@@ -190,6 +191,10 @@ module.exports = class PartionPg {
 
     //     return await this._dbReader.any(sql);
     // }
+
+    _combineResults(accumulatedResults, singleResult) {
+        return accumulatedResults.concat(singleResult);
+    }
 
     _generateWhereClause(filters) {
         let firstCondition = filters.findIndex(e => e.combine == undefined);

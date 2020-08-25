@@ -2,7 +2,7 @@ const assert = require('assert');
 const sinon = require('sinon');
 const targetType = require('../index');
 let _target = {};
-let _dbReaderObject = { "none": sinon.fake(), "any": sinon.fake() }, _dbWriterObject = { "none": sinon.fake(), "any": sinon.fake() };
+let _dbReaderObject = { "none": sinon.fake(), "multiple": sinon.fake() }, _dbWriterObject = { "none": sinon.fake(), "any": sinon.fake() };
 let _staticSampleType = [{
     "name": "time",
     "datatype": "bigint",
@@ -122,44 +122,46 @@ describe('PartionPg Unit Tests', function () {
     });
 
     it('should execute the correct sql when no filters, no selective columns and within range value is passed for readRange', async function () {
-        let expectedSql = `
+        let expectedSql = [`
             SELECT "time","tagid","value","quality" 
             FROM "Anukram"."Raw_0_999"
-            WHERE "time" BETWEEN 0 AND 998 
-            ;`;
+            WHERE "time" BETWEEN 0 AND 998  ;`];
 
+        _dbReaderObject.multiple = sinon.fake.returns([['a']]);
         await _target.load(_staticSampleType);
-        await _target.readRange(0, 998);
+        let result = await _target.readRange(0, 998);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
-        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
-        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql);
+        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual(['a'], result);
     });
 
     it('should execute the correct sql when no filters, no selective columns and outside range value is passed for readRange', async function () {
-        let expectedSql = `
+        let expectedSql = [`
             SELECT "time","tagid","value","quality" 
             FROM "Anukram"."Raw_0_999"
-            
-            UNION ALL
+             ;`,
+            `
             SELECT "time","tagid","value","quality" 
             FROM "Anukram"."Raw_1000_1999"
-            WHERE "time" BETWEEN 0 AND 1001 
-            ;`;
+            WHERE "time" BETWEEN 0 AND 1001  ;`];
 
+        _dbReaderObject.multiple = sinon.fake.returns([['a'], ['b']]);
         await _target.load(_staticSampleType);
-        await _target.readRange(0, 1001);
+        let result = await _target.readRange(0, 1001);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
-        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
-        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql);
+        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual(['a', 'b'], result);
     });
 
     it('should execute the correct sql with "equal-to" and "in" filters combined, no selective columns and within range value is passed for readRange', async function () {
-        let expectedSql = `
+        let expectedSql = [`
             SELECT "time","tagid","value","quality" 
             FROM "Anukram"."Raw_0_999"
-            WHERE "time" BETWEEN 0 AND 998  AND  "quality" = 1 and "tagid" IN VALUES ("2","3","4") and "value" = 2
-            ;`;
+            WHERE "time" BETWEEN 0 AND 998  AND  "quality" = 1 and "tagid" IN VALUES ("2","3","4") and "value" = 2 ;`];
 
+        _dbReaderObject.multiple = sinon.fake.returns([['a']]);
         await _target.load(_staticSampleType);
         let filters = [
             {
@@ -186,19 +188,20 @@ describe('PartionPg Unit Tests', function () {
                 }
             }
         ];
-        await _target.readRange(0, 998, [], filters);
+        let result = await _target.readRange(0, 998, [], filters);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
-        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
-        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql);
+        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual(['a'], result);
     });
 
     it('should execute the correct sql with "in" filter, no selective columns and within range value is passed for readRange', async function () {
-        let expectedSql = `
+        let expectedSql = [`
             SELECT "time","tagid","value","quality" 
             FROM "Anukram"."Raw_0_999"
-            WHERE "time" BETWEEN 0 AND 998  AND  "tagid" IN VALUES ("2","3","4")
-            ;`;
+            WHERE "time" BETWEEN 0 AND 998  AND  "tagid" IN VALUES ("2","3","4") ;`];
 
+        _dbReaderObject.multiple = sinon.fake.returns([['a']]);
         await _target.load(_staticSampleType);
         let filters = [
             {
@@ -207,19 +210,20 @@ describe('PartionPg Unit Tests', function () {
                 "values": [2, 3, 4]
             }
         ];
-        await _target.readRange(0, 998, [], filters);
+        let result = await _target.readRange(0, 998, [], filters);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
-        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
-        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql);
+        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual(['a'], result);
     });
 
     it('should execute the correct sql with "equal-to" filter, no selective columns and within range value is passed for readRange', async function () {
-        let expectedSql = `
+        let expectedSql = [`
             SELECT "time","tagid","value","quality" 
             FROM "Anukram"."Raw_0_999"
-            WHERE "time" BETWEEN 0 AND 998  AND  "quality" = 1
-            ;`;
+            WHERE "time" BETWEEN 0 AND 998  AND  "quality" = 1 ;`];
 
+        _dbReaderObject.multiple = sinon.fake.returns([['a']]);
         await _target.load(_staticSampleType);
         let filters = [
             {
@@ -228,18 +232,18 @@ describe('PartionPg Unit Tests', function () {
                 "values": [1]
             }
         ];
-        await _target.readRange(0, 998, [], filters);
+        let result = await _target.readRange(0, 998, [], filters);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
-        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
-        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql);
+        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual(['a'], result);
     });
 
     it('should execute the correct sql with "equal-to" and "in" filters combined with selective columns and within range values is passed for readRange', async function () {
-        let expectedSql = `
+        let expectedSql = [`
             SELECT "tagid" 
             FROM "Anukram"."Raw_0_999"
-            WHERE "time" BETWEEN 0 AND 998  AND  "quality" = 1 and "tagid" IN VALUES ("2","3","4")
-            ;`;
+            WHERE "time" BETWEEN 0 AND 998  AND  "quality" = 1 and "tagid" IN VALUES ("2","3","4") ;`];
 
         let filters = [
             {
@@ -257,26 +261,27 @@ describe('PartionPg Unit Tests', function () {
                 }
             }
         ];
+
+        _dbReaderObject.multiple = sinon.fake.returns([['a']]);
         await _target.load(_staticSampleType);
-        let selectiveColumns=[
-            _target.columnsNames.findIndex(c=>c==="tagid")
+        let selectiveColumns = [
+            _target.columnsNames.findIndex(c => c === "tagid")
         ];
-        await _target.readRange(0, 998, selectiveColumns, filters);
+        let result = await _target.readRange(0, 998, selectiveColumns, filters);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
-        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
-        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql);
+        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual(['a'], result);
     });
 
     it('should execute the correct sql with "equal-to" and "in" filters combined with selective columns, outside range values for readRange', async function () {
-        let expectedSql = `
+        let expectedSql = [`
             SELECT "tagid" 
             FROM "Anukram"."Raw_0_999"
-            WHERE  "quality" = 1 and "tagid" IN VALUES ("2","3","4") 
-            UNION ALL
+            WHERE  "quality" = 1 and "tagid" IN VALUES ("2","3","4")  ;`, `
             SELECT "tagid" 
             FROM "Anukram"."Raw_1000_1999"
-            WHERE "time" BETWEEN 0 AND 1004  AND  "quality" = 1 and "tagid" IN VALUES ("2","3","4")
-            ;`;
+            WHERE "time" BETWEEN 0 AND 1004  AND  "quality" = 1 and "tagid" IN VALUES ("2","3","4") ;`];
 
         let filters = [
             {
@@ -294,13 +299,37 @@ describe('PartionPg Unit Tests', function () {
                 }
             }
         ];
+        _dbReaderObject.multiple = sinon.fake.returns([['a'], ['b']]);
         await _target.load(_staticSampleType);
-        let selectiveColumns=[
-            _target.columnsNames.findIndex(c=>c==="tagid")
+        let selectiveColumns = [
+            _target.columnsNames.findIndex(c => c === "tagid")
         ];
-        await _target.readRange(0, 1004, selectiveColumns, filters);
+        let result = await _target.readRange(0, 1004, selectiveColumns, filters);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
-        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
-        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql);
+        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual(['a', 'b'], result);
+    });
+
+    it('should return empty result set when no records are found for readRange', async function () {
+        let expectedSql = [`
+            SELECT "time","tagid","value","quality" 
+            FROM "Anukram"."Raw_0_999"
+            WHERE "time" BETWEEN 0 AND 998  AND  "quality" = 1 ;`];
+
+        _dbReaderObject.multiple = sinon.fake.returns([]);
+        await _target.load(_staticSampleType);
+        let filters = [
+            {
+                "name": "quality",
+                "operator": "=",
+                "values": [1]
+            }
+        ];
+        let result = await _target.readRange(0, 998, [], filters);
+        assert.deepEqual(_dbWriterObject.any.notCalled, true);
+        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual([], result);
     });
 });
