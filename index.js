@@ -77,12 +77,11 @@ module.exports = class PartionPg {
         primarykey_name TEXT := table_name ||'_pk';
         dsql TEXT;
         BEGIN
-        dsql:= 'CREATE TABLE IF NOT EXISTS "${this.schemaName}".'|| quote_ident(table_name) || '(${tableColumns} ,CONSTRAINT '|| quote_ident(primarykey_name)||' PRIMARY KEY (${primaryKeyColumns}))';
-        EXECUTE dsql;
-        dsql:= 'CREATE INDEX IF NOT EXISTS '|| quote_ident(index_name) ||' ON "${this.schemaName}".' || quote_ident(table_name) || ' (${indexColumns})';
-        EXECUTE dsql;
+        dsql:= 'SELECT pg_advisory_lock(hashtext($1)); ';
+        dsql:= dsql ||'CREATE TABLE IF NOT EXISTS "${this.schemaName}".'|| quote_ident(table_name) || '(${tableColumns} ,CONSTRAINT '|| quote_ident(primarykey_name)||' PRIMARY KEY (${primaryKeyColumns})); ';
+        dsql:= dsql ||'CREATE INDEX IF NOT EXISTS '|| quote_ident(index_name) ||' ON "${this.schemaName}".' || quote_ident(table_name) || ' (${indexColumns});';
+        EXECUTE dsql USING table_name;
         END$$;`;
-
         await this._dbWriter.none(unsafeSql);
 
 
@@ -94,6 +93,7 @@ module.exports = class PartionPg {
         let groupKeyCursor = groupKeyIterator.next();
         while (!groupKeyCursor.done) {
             let sql = this._generateBulkInsert(groupKeyCursor.value, groups.get(groupKeyCursor.value));
+            //console.log(sql);
             await this._dbWriter.none(sql);// This is sequential cause the write speed is shared even if run it in parallel it will take same time.
             groupKeyCursor = groupKeyIterator.next();
         }

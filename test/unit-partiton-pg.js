@@ -26,6 +26,8 @@ let _staticSampleType = [{
     "datatype": "integer",
     "filterable": { "sorted": "asc" },
 }];
+
+
 describe('PartionPg Unit Tests', function () {
 
     this.beforeEach(async function () {
@@ -58,10 +60,10 @@ describe('PartionPg Unit Tests', function () {
         primarykey_name TEXT := table_name ||'_pk';
         dsql TEXT;
         BEGIN
-        dsql:= 'CREATE TABLE IF NOT EXISTS "Anukram".'|| quote_ident(table_name) || '( "time" bigint, "tagid" integer, "value" double precision, "quality" integer ,CONSTRAINT '|| quote_ident(primarykey_name)||' PRIMARY KEY ("time","tagid"))';
-        EXECUTE dsql;
-        dsql:= 'CREATE INDEX IF NOT EXISTS '|| quote_ident(index_name) ||' ON "Anukram".' || quote_ident(table_name) || ' ( "time" DESC, "quality" ASC)';
-        EXECUTE dsql;
+        dsql:= 'SELECT pg_advisory_lock(hashtext($1)); ';
+        dsql:= dsql ||'CREATE TABLE IF NOT EXISTS "Anukram".'|| quote_ident(table_name) || '( "time" bigint, "tagid" integer, "value" double precision, "quality" integer ,CONSTRAINT '|| quote_ident(primarykey_name)||' PRIMARY KEY ("time","tagid")); ';
+        dsql:= dsql ||'CREATE INDEX IF NOT EXISTS '|| quote_ident(index_name) ||' ON "Anukram".' || quote_ident(table_name) || ' ( "time" DESC, "quality" ASC);';
+        EXECUTE dsql USING table_name;
         END$$;`;
 
         await _target.define(_staticSampleType);

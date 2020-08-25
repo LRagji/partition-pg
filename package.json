@@ -4,7 +4,9 @@
   "description": "This package helps you to create and maintain your partitions in postgres without worying about partition maintenance.",
   "main": "index.js",
   "scripts": {
-    "test": "./node_modules/mocha/bin/mocha",
+    "perf": "./node_modules/mocha/bin/mocha test/perf-tests.js",
+    "e2e": "./node_modules/mocha/bin/mocha test/e2e-tests.js",
+    "test": "./node_modules/mocha/bin/mocha test/unit-partiton-pg.js",
     "coverage": "npx nyc --reporter=lcov --reporter=text-summary npm run test"
   },
   "keywords": [
@@ -19,6 +21,7 @@
     "chai": "^4.2.0",
     "mocha": "^8.1.1",
     "nyc": "^15.1.0",
+    "pg-promise": "^10.6.0",
     "sinon": "^9.0.3"
   }
 }
