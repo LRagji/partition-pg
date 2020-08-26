@@ -1,8 +1,9 @@
 const assert = require('assert');
 const sinon = require('sinon');
+const pg = require('pg-promise');
 const targetType = require('../index');
 let _target = {};
-let _dbReaderObject = { "none": sinon.fake(), "multiple": sinon.fake() }, _dbWriterObject = { "none": sinon.fake(), "any": sinon.fake() };
+let _dbReaderObject = { "none": sinon.fake(), "any": sinon.fake() }, _dbWriterObject = { "none": sinon.fake(), "any": sinon.fake() };
 let _staticSampleType = [{
     "name": "time",
     "datatype": "bigint",
@@ -124,18 +125,37 @@ describe('PartionPg Unit Tests', function () {
     });
 
     it('should execute the correct sql when no filters, no selective columns and within range value is passed for readRange', async function () {
-        let expectedSql = [`
+        let expectedSql = `
             SELECT "time","tagid","value","quality" 
             FROM "Anukram"."Raw_0_999"
-            WHERE "time" BETWEEN 0 AND 998  ;`];
+            WHERE "time" BETWEEN 0 AND 998  ;`;
 
-        _dbReaderObject.multiple = sinon.fake.returns([['a']]);
+        _dbReaderObject.any = sinon.fake.returns(['a']);
         await _target.load(_staticSampleType);
         let result = await _target.readRange(0, 998);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
-        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
-        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql);
         assert.deepEqual(['a'], result);
+    });
+
+    it('should return empty result when table not exists exception is thrown', async function () {
+        let expectedSql = `
+            SELECT "time","tagid","value","quality" 
+            FROM "Anukram"."Raw_0_999"
+            WHERE "time" BETWEEN 0 AND 998  ;`;
+        let table404 = new Error("Faked Table not found error");
+
+        table404.code = "42P01";
+        _dbReaderObject.any = sinon.fake.rejects(table404);
+
+        await _target.load(_staticSampleType);
+        let result = await _target.readRange(0, 998);
+
+        assert.deepEqual(_dbWriterObject.any.notCalled, true);
+        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql);
+        assert.deepEqual([], result);
     });
 
     it('should execute the correct sql when no filters, no selective columns and outside range value is passed for readRange', async function () {
@@ -148,12 +168,24 @@ describe('PartionPg Unit Tests', function () {
             FROM "Anukram"."Raw_1000_1999"
             WHERE "time" BETWEEN 0 AND 1001  ;`];
 
-        _dbReaderObject.multiple = sinon.fake.returns([['a'], ['b']]);
+        _dbReaderObject.any = sinon.fake(sql => {
+            if (sql === expectedSql[0]) {
+                return ['a'];
+            }
+            else if (sql === expectedSql[1]) {
+                return ['b'];
+            }
+            else {
+                throw new Error("Not expected Sql: " + sql);
+            }
+        });
+
         await _target.load(_staticSampleType);
         let result = await _target.readRange(0, 1001);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
-        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
-        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual(_dbReaderObject.any.callCount, 2);
+        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql[0]);
+        assert.deepEqual(_dbReaderObject.any.secondCall.args[0], expectedSql[1]);
         assert.deepEqual(['a', 'b'], result);
     });
 
@@ -163,7 +195,15 @@ describe('PartionPg Unit Tests', function () {
             FROM "Anukram"."Raw_0_999"
             WHERE "time" BETWEEN 0 AND 998  AND  "quality" = 1 and "tagid" IN VALUES ("2","3","4") and "value" = 2 ;`];
 
-        _dbReaderObject.multiple = sinon.fake.returns([['a']]);
+        _dbReaderObject.any = sinon.fake(sql => {
+            if (sql === expectedSql[0]) {
+                return ['a'];
+            }
+            else {
+                throw new Error("Not expected Sql: " + sql);
+            }
+        });
+
         await _target.load(_staticSampleType);
         let filters = [
             {
@@ -192,8 +232,8 @@ describe('PartionPg Unit Tests', function () {
         ];
         let result = await _target.readRange(0, 998, [], filters);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
-        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
-        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql[0]);
         assert.deepEqual(['a'], result);
     });
 
@@ -203,7 +243,15 @@ describe('PartionPg Unit Tests', function () {
             FROM "Anukram"."Raw_0_999"
             WHERE "time" BETWEEN 0 AND 998  AND  "tagid" IN VALUES ("2","3","4") ;`];
 
-        _dbReaderObject.multiple = sinon.fake.returns([['a']]);
+        _dbReaderObject.any = sinon.fake(sql => {
+            if (sql === expectedSql[0]) {
+                return ['a'];
+            }
+            else {
+                throw new Error("Not expected Sql: " + sql);
+            }
+        });
+
         await _target.load(_staticSampleType);
         let filters = [
             {
@@ -214,8 +262,8 @@ describe('PartionPg Unit Tests', function () {
         ];
         let result = await _target.readRange(0, 998, [], filters);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
-        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
-        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql[0]);
         assert.deepEqual(['a'], result);
     });
 
@@ -225,7 +273,15 @@ describe('PartionPg Unit Tests', function () {
             FROM "Anukram"."Raw_0_999"
             WHERE "time" BETWEEN 0 AND 998  AND  "quality" = 1 ;`];
 
-        _dbReaderObject.multiple = sinon.fake.returns([['a']]);
+        _dbReaderObject.any = sinon.fake(sql => {
+            if (sql === expectedSql[0]) {
+                return ['a'];
+            }
+            else {
+                throw new Error("Not expected Sql: " + sql);
+            }
+        });
+
         await _target.load(_staticSampleType);
         let filters = [
             {
@@ -236,8 +292,8 @@ describe('PartionPg Unit Tests', function () {
         ];
         let result = await _target.readRange(0, 998, [], filters);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
-        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
-        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql[0]);
         assert.deepEqual(['a'], result);
     });
 
@@ -264,15 +320,23 @@ describe('PartionPg Unit Tests', function () {
             }
         ];
 
-        _dbReaderObject.multiple = sinon.fake.returns([['a']]);
+        _dbReaderObject.any = sinon.fake(sql => {
+            if (sql === expectedSql[0]) {
+                return ['a'];
+            }
+            else {
+                throw new Error("Not expected Sql: " + sql);
+            }
+        });
+
         await _target.load(_staticSampleType);
         let selectiveColumns = [
             _target.columnsNames.findIndex(c => c === "tagid")
         ];
         let result = await _target.readRange(0, 998, selectiveColumns, filters);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
-        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
-        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql[0]);
         assert.deepEqual(['a'], result);
     });
 
@@ -301,15 +365,28 @@ describe('PartionPg Unit Tests', function () {
                 }
             }
         ];
-        _dbReaderObject.multiple = sinon.fake.returns([['a'], ['b']]);
+
+        _dbReaderObject.any = sinon.fake(sql => {
+            if (sql === expectedSql[0]) {
+                return ['a'];
+            }
+            else if (sql === expectedSql[1]) {
+                return ['b'];
+            }
+            else {
+                throw new Error("Not expected Sql: " + sql);
+            }
+        });
+
         await _target.load(_staticSampleType);
         let selectiveColumns = [
             _target.columnsNames.findIndex(c => c === "tagid")
         ];
         let result = await _target.readRange(0, 1004, selectiveColumns, filters);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
-        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
-        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual(_dbReaderObject.any.callCount, 2);
+        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql[0]);
+        assert.deepEqual(_dbReaderObject.any.secondCall.args[0], expectedSql[1]);
         assert.deepEqual(['a', 'b'], result);
     });
 
@@ -319,7 +396,15 @@ describe('PartionPg Unit Tests', function () {
             FROM "Anukram"."Raw_0_999"
             WHERE "time" BETWEEN 0 AND 998  AND  "quality" = 1 ;`];
 
-        _dbReaderObject.multiple = sinon.fake.returns([]);
+        _dbReaderObject.any = sinon.fake(sql => {
+            if (sql === expectedSql[0]) {
+                return [];
+            }
+            else {
+                throw new Error("Not expected Sql: " + sql);
+            }
+        });
+
         await _target.load(_staticSampleType);
         let filters = [
             {
@@ -330,8 +415,34 @@ describe('PartionPg Unit Tests', function () {
         ];
         let result = await _target.readRange(0, 998, [], filters);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
-        assert.deepEqual(_dbReaderObject.multiple.calledOnce, true);
-        assert.deepEqual(_dbReaderObject.multiple.firstCall.args[0], expectedSql);
+        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql[0]);
         assert.deepEqual([], result);
+    });
+
+    it('should throw the exception any other than table not found', async function () {
+        let expectedSql = `
+            SELECT "time","tagid","value","quality" 
+            FROM "Anukram"."Raw_0_999"
+            WHERE "time" BETWEEN 0 AND 998  ;`;
+
+        let unknownError = new Error("Faked unknown error");
+        _dbReaderObject.any = sinon.fake.rejects(unknownError);
+
+        await _target.load(_staticSampleType);
+        let result;
+        try {
+            result = await _target.readRange(0, 998);
+        }
+        catch (exception) {
+            if (exception.message != unknownError.message) {
+                assert.fail("Unaccepted Exception: " + exception.message);
+            }
+        }
+    
+        assert.deepEqual(_dbWriterObject.any.notCalled, true);
+        assert.deepEqual(_dbReaderObject.any.calledOnce, true);
+        assert.deepEqual(_dbReaderObject.any.firstCall.args[0], expectedSql);
+        assert.deepEqual(undefined, result);
     });
 });

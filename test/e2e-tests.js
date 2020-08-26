@@ -43,17 +43,9 @@ describe('End to End Tests', function () {
             max: 2 //2 Writer
         };
         const _dbRConnection = pgp(readConfigParams);
-        let multiple = async (sqlStatements) => {
-            let allExecutions = sqlStatements.reduce((promises, sql) => {
-                promises.push(_dbRConnection.any(sql));
-                return promises;
-            }, []);
-            return Promise.all(allExecutions);
-        };
         const _dbWConnection = pgp(writeConfigParams);
-        let _dbReaderObject = { "none": _dbRConnection.none, "multiple": multiple }, _dbWriterObject = { "none": _dbWConnection.none, "any": _dbWConnection.any };
         await _dbWConnection.any(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE; CREATE SCHEMA "${schemaName}";`);
-        _target = new targetType(_dbReaderObject, _dbWriterObject, schemaName, tableName);
+        _target = new targetType(_dbRConnection, _dbWConnection, schemaName, tableName);
     });
 
     this.afterEach(async function () {
@@ -77,7 +69,7 @@ describe('End to End Tests', function () {
         await _target.define(_staticSampleType);
         let insertpayload1 = [], insertpayload2 = [];
         let epoch = 0;
-        for (let index = 0; index < 1000000; index++) {
+        for (let index = 0; index < 1000; index++) {
             insertpayload1.push([(epoch + index), 1, index, 1]);
             insertpayload2.push([(epoch + index), 2, index, 1])
         }
@@ -91,7 +83,23 @@ describe('End to End Tests', function () {
         console.log("Ingestion speed is " + speed.toFixed(2));
 
         let result = await _target.readRange(0, 0);
-        assert.deepEqual(result, [{ "time": "0", "tagid": 1, "value": 0, "quality": 1 },{ "time": "0", "tagid": 2, "value": 0, "quality": 1 }]);
+        assert.deepEqual(result, [{ "time": "0", "tagid": 1, "value": 0, "quality": 1 }, { "time": "0", "tagid": 2, "value": 0, "quality": 1 }]);
+
+    }).timeout(-1);
+
+    it('should return empty result when called with range outside of data ingested', async function () {
+
+        await _target.define(_staticSampleType);
+        let insertpayload = [
+            [0, 1, 1.5, 1],
+            [999, 2, 2.5, 2],
+        ]
+
+        await _target.upsert(insertpayload);
+
+        let result = await _target.readRange(20000000, 20000001);
+
+        assert.deepEqual(result, []);
 
     }).timeout(-1);
 

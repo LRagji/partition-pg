@@ -10,6 +10,7 @@
 // Make it TypeScript for interface atleast
 // Add peer dependency for PG
 // Add readme
+// Add validation for non negative reads and widths This lib only supports positive numbers for partition.
 
 
 module.exports = class PartionPg {
@@ -28,6 +29,7 @@ module.exports = class PartionPg {
         this._calculateFrameStart = this._calculateFrameStart.bind(this);
         this._calculateFrameStart = this._calculateFrameStart.bind(this);
         this._combineResults = this._combineResults.bind(this);
+        this._tableDoesnotExists = this._tableDoesnotExists.bind(this);
 
         this.filterOperators = new Map();
         this.filterOperators.set("=", function (operands) { return operands[0] });
@@ -121,7 +123,7 @@ module.exports = class PartionPg {
 
         let whereCondition = this._generateWhereClause(filters);
 
-        let sqlStatements = [];
+        let sqlStatementsExecutions = [];
         while (calculatedFrom < calculatedTo) {
             let whereClause = "";
             if (calculatedFrom >= from && this._calculateFrameEndFromStart(calculatedFrom, width) <= to) {
@@ -144,17 +146,17 @@ module.exports = class PartionPg {
             // }
 
             let tableName = `${calculatedFrom}_${this._calculateFrameEndFromStart(calculatedFrom, width)}`;
-            sqlStatements.push(`
+            sqlStatementsExecutions.push(
+                this._dbReader.any(`
             SELECT ${columns} 
             FROM "${this.schemaName}"."${this.tableName}_${tableName}"
-            ${whereClause} ;`);
+            ${whereClause} ;`));
 
             calculatedFrom += width;
         }
 
-        let resultsArray = await this._dbReader.multiple(sqlStatements);
-        return resultsArray.length > 0 ? resultsArray.reduce(this._combineResults) : [];
-
+        let resultsArray = await Promise.allSettled(sqlStatementsExecutions)
+        return resultsArray.reduce(this._combineResults, []);
     }
 
     // async readIn(values, columnIndexes = [], filters = []) {
@@ -193,7 +195,22 @@ module.exports = class PartionPg {
     // }
 
     _combineResults(accumulatedResults, singleResult) {
-        return accumulatedResults.concat(singleResult);
+        if (Array.isArray(accumulatedResults)) {
+            if (singleResult.status === 'fulfilled') {
+                return accumulatedResults.concat(singleResult.value);
+            }
+            else if (this._tableDoesnotExists(singleResult)) {
+                return accumulatedResults;
+            }
+            else {
+                return Promise.reject(singleResult.reason);
+            }
+        }
+    }
+
+    _tableDoesnotExists(queryResult) {
+        //This is a valid scenario from design as the requested table doesnot exists
+        return queryResult.status === 'rejected' && queryResult.reason.code === "42P01";
     }
 
     _generateWhereClause(filters) {
