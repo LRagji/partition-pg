@@ -11,7 +11,7 @@
 // Add peer dependency for PG
 // Add readme
 // Add validation for non negative reads and widths This lib only supports positive numbers for partition.
-
+const pgp = require('pg-promise');
 
 module.exports = class PartionPg {
     constructor(pgpReaderConnection, pgpWriterConnection, schemaName, name) {
@@ -70,22 +70,25 @@ module.exports = class PartionPg {
         indexColumns = indexColumns.slice(0, -1);
 
 
-        let unsafeSql = `CREATE FUNCTION "${this.schemaName}"."${"auto_part_" + this.tableName}"(IN name TEXT) RETURNS VOID
+        let unsafeSql = `CREATE FUNCTION $[schema_name:name].$[function_name:name] (IN name TEXT) RETURNS VOID
         LANGUAGE 'plpgsql'
         AS $$
         DECLARE
-        table_name TEXT := '${this.tableName}_'|| name;
+        table_name TEXT := $[table_name] || '_' || name;
         index_name TEXT := table_name ||'_idx';
         primarykey_name TEXT := table_name ||'_pk';
         dsql TEXT;
         BEGIN
         dsql:= 'SELECT pg_advisory_lock(hashtext($1)); ';
-        dsql:= dsql ||'CREATE TABLE IF NOT EXISTS "${this.schemaName}".'|| quote_ident(table_name) || '(${tableColumns} ,CONSTRAINT '|| quote_ident(primarykey_name)||' PRIMARY KEY (${primaryKeyColumns})); ';
-        dsql:= dsql ||'CREATE INDEX IF NOT EXISTS '|| quote_ident(index_name) ||' ON "${this.schemaName}".' || quote_ident(table_name) || ' (${indexColumns});';
+        dsql:= dsql ||'CREATE TABLE IF NOT EXISTS $[schema_name:name].'|| quote_ident(table_name) || '(${tableColumns} ,CONSTRAINT '|| quote_ident(primarykey_name)||' PRIMARY KEY (${primaryKeyColumns})); ';
+        dsql:= dsql ||'CREATE INDEX IF NOT EXISTS '|| quote_ident(index_name) ||' ON $[schema_name:name].' || quote_ident(table_name) || ' (${indexColumns});';
         EXECUTE dsql USING table_name;
         END$$;`;
-        await this._dbWriter.none(unsafeSql);
-
+        await this._dbWriter.none(pgp.as.format(unsafeSql, {
+            "schema_name": this.schemaName,
+            "function_name": ("auto_part_" + this.tableName),
+            "table_name": this.tableName
+        }));
 
     }
 

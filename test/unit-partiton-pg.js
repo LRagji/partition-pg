@@ -52,11 +52,11 @@ describe('PartionPg Unit Tests', function () {
 
     it('should execute correct sql when defining a table', async function () {
 
-        let expectedSql = `CREATE FUNCTION "Anukram"."auto_part_Raw"(IN name TEXT) RETURNS VOID
+        let expectedSql = `CREATE FUNCTION "Anukram"."auto_part_Raw" (IN name TEXT) RETURNS VOID
         LANGUAGE 'plpgsql'
         AS $$
         DECLARE
-        table_name TEXT := 'Raw_'|| name;
+        table_name TEXT := 'Raw' || '_' || name;
         index_name TEXT := table_name ||'_idx';
         primarykey_name TEXT := table_name ||'_pk';
         dsql TEXT;
