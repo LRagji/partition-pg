@@ -35,6 +35,12 @@ module.exports = class PartionPg {
         this.filterOperators.set("=", function (operands) { return operands[0] });
         this.filterOperators.set("IN", function (operands) { return `VALUES (${operands.reduce((a, e) => a + `"${e}",`, "").slice(0, -1)})` });
 
+        this.datatypes = new Map();
+        this.datatypes.set("bigint", "bigint");
+        this.datatypes.set("integer", "integer");
+        this.datatypes.set("text", "text");
+        this.datatypes.set("double", "double precision");
+
         //Public functiond and members
         this.load = this.load.bind(this);
         this.define = this.define.bind(this);
@@ -55,7 +61,7 @@ module.exports = class PartionPg {
     load(definition) {
         let index = definition.findIndex(c => c.key != undefined);
         this._partitionKey = { "index": index, "range": parseInt(definition[index].key.range) };
-        this.columnsNames = definition.map(e => e.name);
+        this.columnsNames = definition.map(e => pgp.as.format('$1:alias', [e.name]));
 
     }
 
@@ -69,7 +75,6 @@ module.exports = class PartionPg {
         tableColumns = tableColumns.slice(0, -1);
         indexColumns = indexColumns.slice(0, -1);
 
-
         let unsafeSql = `CREATE FUNCTION $[schema_name:name].$[function_name:name] (IN name TEXT) RETURNS VOID
         LANGUAGE 'plpgsql'
         AS $$
@@ -80,14 +85,17 @@ module.exports = class PartionPg {
         dsql TEXT;
         BEGIN
         dsql:= 'SELECT pg_advisory_lock(hashtext($1)); ';
-        dsql:= dsql ||'CREATE TABLE IF NOT EXISTS $[schema_name:name].'|| quote_ident(table_name) || '(${tableColumns} ,CONSTRAINT '|| quote_ident(primarykey_name)||' PRIMARY KEY (${primaryKeyColumns})); ';
-        dsql:= dsql ||'CREATE INDEX IF NOT EXISTS '|| quote_ident(index_name) ||' ON $[schema_name:name].' || quote_ident(table_name) || ' (${indexColumns});';
+        dsql:= dsql ||'CREATE TABLE IF NOT EXISTS $[schema_name:name].'|| quote_ident(table_name) || '($[columns:raw] ,CONSTRAINT '|| quote_ident(primarykey_name)||' PRIMARY KEY ($[primaryKeyColumns:raw])); ';
+        dsql:= dsql ||'CREATE INDEX IF NOT EXISTS '|| quote_ident(index_name) ||' ON $[schema_name:name].' || quote_ident(table_name) || ' ($[indexColumns:raw]);';
         EXECUTE dsql USING table_name;
         END$$;`;
         await this._dbWriter.none(pgp.as.format(unsafeSql, {
             "schema_name": this.schemaName,
             "function_name": ("auto_part_" + this.tableName),
-            "table_name": this.tableName
+            "table_name": this.tableName,
+            "columns":tableColumns,
+            "primaryKeyColumns":primaryKeyColumns,
+            "indexColumns":indexColumns
         }));
 
     }
@@ -284,14 +292,19 @@ module.exports = class PartionPg {
         //         "range":10
         //     }
         // } "TagId" INTEGER NOT NULL,
-        completeSql += ` "${schema.name}" ${schema.datatype},`;
+        if (this.datatypes.has(schema.datatype)) {
+            completeSql += pgp.as.format(" $[name:alias] $[datatype:raw],", { "name": schema.name, "datatype": this.datatypes.get(schema.datatype) });
+        }
+        else {
+            throw new Error(`${schema.datatype} is not supported data type.`);
+        }
         return completeSql;
     }
 
     _generatePrimaryKeyConstraintColumns(completeSql, schema) {
 
         if (schema.primary === true) {
-            completeSql += `"${schema.name}",`;
+            completeSql += pgp.as.format("$[name:alias],", schema);
         }
         return completeSql;
     }
@@ -299,7 +312,7 @@ module.exports = class PartionPg {
     _generateSqlIndexColumns(completeSql, schema) {
 
         if (schema.filterable != undefined) {
-            completeSql += ` "${schema.name}" ${schema.filterable.sorted === 'asc' ? "ASC" : "DESC"},`;
+            completeSql += pgp.as.format(" $[name:alias] $[sort:raw],", { "name": schema.name, "sort": schema.filterable.sorted === 'asc' ? "ASC" : "DESC" });
         }
         return completeSql;
     }

@@ -22,7 +22,7 @@ let _staticSampleType = [{
 },
 {
     "name": "value",
-    "datatype": "double precision",
+    "datatype": "double",
 },
 {
     "name": "quality",
@@ -47,7 +47,7 @@ describe('End to End Tests', function () {
         };
         const _dbRConnection = pgp(readConfigParams);
         const _dbWConnection = pgp(writeConfigParams);
-        await localUtils.cleanDBInChunks(_dbRConnection,schemaName);
+        await localUtils.cleanDBInChunks(_dbRConnection, schemaName);
         _target = new targetType(_dbRConnection, _dbWConnection, schemaName, tableName);
     });
 

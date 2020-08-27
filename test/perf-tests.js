@@ -22,7 +22,7 @@ let _staticSampleType = [{
 },
 {
     "name": "value",
-    "datatype": "double precision",
+    "datatype": "double",
 },
 {
     "name": "quality",
