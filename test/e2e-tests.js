@@ -1,7 +1,10 @@
 const assert = require('assert');
 const targetType = require('../index');
 const pgp = require('pg-promise')();
-const defaultConectionString = "postgres://postgres:@localhost:5432/pgpartition?application_name=e2e";
+const defaultConectionString = "postgres://postgres:mysecretpassword@localhost:5432/pgpartition?application_name=perf-test";
+const utils = require('./utilities');
+const localUtils = new utils();
+
 let _target = {};
 let _staticSampleType = [{
     "name": "time",
@@ -44,7 +47,7 @@ describe('End to End Tests', function () {
         };
         const _dbRConnection = pgp(readConfigParams);
         const _dbWConnection = pgp(writeConfigParams);
-        await _dbWConnection.any(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE; CREATE SCHEMA "${schemaName}";`);
+        await localUtils.cleanDBInChunks(_dbRConnection,schemaName);
         _target = new targetType(_dbRConnection, _dbWConnection, schemaName, tableName);
     });
 
