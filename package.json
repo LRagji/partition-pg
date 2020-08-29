@@ -18,12 +18,15 @@
   "author": "laukik",
   "license": "SEE LICENSE IN license.md",
   "dependencies": {
-    "pg-promise": "^10.6.1"
+    "pg-promise": "^10.6.1",
+    "ts-map": "^1.0.3"
   },
   "devDependencies": {
+    "@types/node": "^14.6.2",
     "chai": "^4.2.0",
     "mocha": "^8.1.1",
     "nyc": "^15.1.0",
-    "sinon": "^9.0.3"
+    "sinon": "^9.0.3",
+    "typescript": "^4.0.2"
   }
 }

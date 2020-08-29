@@ -1,7 +1,7 @@
 const assert = require('assert');
 const sinon = require('sinon');
 const pg = require('pg-promise');
-const targetType = require('../index');
+const targetType = require('../dist/index').PartionPg;
 let _target = {};
 let _dbReaderObject = { "none": sinon.fake(), "any": sinon.fake() }, _dbWriterObject = { "none": sinon.fake(), "any": sinon.fake() };
 let _staticSampleType = [{
