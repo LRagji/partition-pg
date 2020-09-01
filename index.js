@@ -93,9 +93,9 @@ module.exports = class PartionPg {
             "schema_name": this.schemaName,
             "function_name": ("auto_part_" + this.tableName),
             "table_name": this.tableName,
-            "columns":tableColumns,
-            "primaryKeyColumns":primaryKeyColumns,
-            "indexColumns":indexColumns
+            "columns": tableColumns,
+            "primaryKeyColumns": primaryKeyColumns,
+            "indexColumns": indexColumns
         }));
 
     }
@@ -381,3 +381,108 @@ module.exports = class PartionPg {
 //     }
 // }
 // console.log("Are they Equal: " + areEqual);
+//Min TS, Min Value, Min Quality, BloomPayload, TS-Histogram, Value-Histogram, Quality-Histogram,Max TS, Max Value, Max Quality, CRC.
+
+// let BloomFilter = require('bloomfilter').BloomFilter;
+// let createCountMinSketch = require("count-min-sketch");
+// let histTS = createCountMinSketch(0.00001,0.00001), histValue = createCountMinSketch(0.00001,0.00001), histQuality = createCountMinSketch(0.00001,0.00001);
+// let length = 200;
+// let bloom = new BloomFilter(
+//     length*2, // number of bits to allocate.
+//     16*2        // number of hash functions.
+// );
+// let inputArray = []
+// let timestampMin = 1598140800021;
+// let timestampMax = timestampMin + length
+// let maxTS = Number.MIN_VALUE, maxValue = Number.MIN_VALUE, maxQuality = Number.MIN_VALUE, minTS = Number.MAX_VALUE, minValue = Number.MAX_VALUE, minQuality = Number.MAX_VALUE;
+
+// console.time("Fill");
+// for (let index = 0; index < (length / 2); index++) {
+//     let timestamp = Math.floor((Math.random() * (timestampMax - timestampMin) + timestampMin));
+//     let value = Math.floor((Math.random() * (100 - 1) + 1));;
+//     let quality = Math.floor((Math.random() * (10 - 1) + 1));
+//     if (maxTS < timestamp) maxTS = timestamp;
+//     if (minTS > timestamp) minTS = timestamp;
+//     if (maxValue < value) maxValue = value;
+//     if (minValue > value) minValue = value;
+//     if (maxQuality < quality) maxQuality = quality;
+//     if (minQuality > quality) minQuality = quality;
+//     histTS.update(timestamp, 1);
+//     histValue.update(value, 1);
+//     histQuality.update(quality, 1);
+//     let sample = `T:${timestamp}V:${value}Q:${quality}`;
+//     inputArray.push(sample);
+//     bloom.add(sample);
+// }
+// console.timeEnd("Fill");
+
+// let outputArray = []
+// console.time("Decypher");
+// let allTS = new Map(), allValues = new Map(), allQualities = new Map();
+// for (let timestamp = minTS; timestamp <= maxTS; timestamp++) {
+//     let repeatTS = histTS.query(timestamp);
+//     if (repeatTS > 0) allTS.set(timestamp, repeatTS);
+// }
+
+// for (let value = minValue; value <= maxValue; value++) {
+//     let repeatValue = histValue.query(value);
+//     if (repeatValue > 0) allValues.set(value, repeatValue);
+// }
+
+// for (let quality = minQuality; quality <= maxQuality; quality++) {
+//     let repeatQuality = histQuality.query(quality);
+//     if (repeatQuality > 0) allQualities.set(quality, repeatQuality);
+// }
+
+// do {
+//     allTS.forEach((tsCount, timestamp) => {
+//         allValues.forEach((valueCount, value) => {
+//             allQualities.forEach((qualityCount, quality) => {
+//                 let sample = `T:${timestamp}V:${value}Q:${quality}`;
+//                 if (bloom.test(sample)) {
+//                     outputArray.push(sample);
+//                     tsCount--;
+//                     valueCount--;
+//                     qualityCount--;
+//                     if (tsCount <= 0) allTS.delete(timestamp);
+//                     if (valueCount <= 0) allValues.delete(timestamp);
+//                     if (qualityCount <= 0) allQualities.delete(timestamp);
+//                 }
+//             });
+//         });
+//     });
+// }
+// while (allTS.size > 0 && allValues.size > 0 && allQualities.size > 0)
+
+// console.log("D");
+
+// // for (let timestamp = minTS; timestamp <= maxTS; timestamp++) {
+// //     let repeatTS = histTS.query(timestamp);
+// //     while (repeatTS > 0) {
+// //         for (let value = minValue; value <= maxValue; value++) {
+// //             let repeatValue = histValue.query(value);
+// //             while (repeatValue > 0) {
+// //                 for (let quality = minQuality; quality <= maxQuality; quality++) {
+// //                     let repeatQuality = histQuality.query(quality);
+// //                     //while (repeatQuality > 0) {
+// //                     let sample = `T:${timestamp}V:${value}Q:${quality}`;
+// //                     if (bloom.test(sample)) outputArray.push(sample);
+// //                     repeatQuality--;
+// //                 }
+// //             }
+// //             repeatValue--;
+// //         }
+// //     }
+// //     repeatTS--;
+// // }
+
+
+
+// console.timeEnd("Decypher");
+
+// if (outputArray.length != inputArray.length) {
+//     console.log(`Failed i:${inputArray.length} o:${outputArray.length}`);
+// }
+// else {
+//     console.log("Passed");
+// }
