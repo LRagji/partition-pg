@@ -1,11 +1,10 @@
 const assert = require('assert');
-const targetType = require('../index');
+const targetType = require('../dist/index').default;
 const pgp = require('pg-promise')();
 const utils = require('./utilities');
 const localUtils = new utils();
 const defaultConectionString = "postgres://postgres:mysecretpassword@localhost:5432/pgpartition?application_name=perf-test";
 
-let _target = {};
 let _staticSampleType = [{
     "name": "time",
     "datatype": "bigint",
@@ -29,13 +28,13 @@ let _staticSampleType = [{
     "datatype": "integer",
     "filterable": { "sorted": "asc" },
 }];
+let tableName = "Raw", schemaName = "Anukram";
+let _dbRConnection, _dbWConnection;
 
 
 describe('Performance Tests', function () {
 
     this.beforeEach(async function () {
-        let tableName = "Raw", schemaName = "Anukram";
-
         const readConfigParams = {
             connectionString: defaultConectionString,
             application_name: "e2e Test",
@@ -46,10 +45,10 @@ describe('Performance Tests', function () {
             application_name: "e2e Test",
             max: 2 //2 Writer
         };
-        const _dbRConnection = pgp(readConfigParams);
-        const _dbWConnection = pgp(writeConfigParams);
+        _dbRConnection = pgp(readConfigParams);
+        _dbWConnection = pgp(writeConfigParams);
         await localUtils.cleanDBInChunks(_dbRConnection, schemaName);
-        _target = new targetType(_dbRConnection, _dbWConnection, schemaName, tableName);
+
     }).timeout(-1);
 
     this.afterEach(async function () {
@@ -59,7 +58,8 @@ describe('Performance Tests', function () {
     it('should be able write static samples greater than 40K/Sec and read them @ 180K/Sec', async function () {
 
         //Write
-        await _target.define(_staticSampleType);
+        const _target = new targetType(_dbRConnection, _dbWConnection, schemaName, tableName, _staticSampleType);
+        await _target.create();
         let insertpayload = []
         let epoch = Date.now();
         for (let index = 0; index < 1000000; index++) {
@@ -96,7 +96,8 @@ describe('Performance Tests', function () {
     it('should be able write static samples worth an entire table(20000000) with 10K tables full load', async function () {
 
         //Write
-        await _target.define(_staticSampleType);
+        const _target = new targetType(_dbRConnection, _dbWConnection, schemaName, tableName, _staticSampleType);
+        await _target.create();
         let insertpayload = []
         let epoch = Date.now();
         for (let index = 0; index < 20000000; index++) {

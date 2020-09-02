@@ -1,7 +1,7 @@
 const assert = require('assert');
 const sinon = require('sinon');
 const pg = require('pg-promise');
-const targetType = require('../dist/index').PartionPg;
+const targetType = require('../dist/index').default;
 let _target = {};
 let _dbReaderObject = { "none": sinon.fake(), "any": sinon.fake() }, _dbWriterObject = { "none": sinon.fake(), "any": sinon.fake() };
 let _staticSampleType = [{
@@ -33,20 +33,20 @@ describe('PartionPg Unit Tests', function () {
 
     this.beforeEach(async function () {
         let tableName = "Raw", schemaName = "Anukram";
-        _target = new targetType(_dbReaderObject, _dbWriterObject, schemaName, tableName);
+        _target = new targetType(_dbReaderObject, _dbWriterObject, schemaName, tableName,_staticSampleType);
     });
 
     this.afterEach(async function () {
         sinon.reset();
     });
 
-    it('should initialize correctly with empty columns correct names and defualt operators', async function () {
+    it('should initialize correctly with correct columns correct names and defualt operators', async function () {
         let tableName = "Raw", schemaName = "Anukram";
         let supportedOperators = ["=", "IN"];
-        let target = new targetType("", "", schemaName, tableName);
+        let target = new targetType("", "", schemaName, tableName,_staticSampleType);
         assert.deepEqual(target.tableName, tableName);
         assert.deepEqual(target.schemaName, schemaName);
-        assert.deepEqual(target.columnsNames, [], "Column names should be empty.");
+        assert.deepEqual(target.columnsNames, ["time", "tagid", "value", "quality"], "Column names are not equal.");
         assert.deepEqual(Array.from(target.filterOperators.keys()), supportedOperators);
     });
 
@@ -67,7 +67,7 @@ describe('PartionPg Unit Tests', function () {
         EXECUTE dsql USING table_name;
         END$$;`;
 
-        await _target.define(_staticSampleType);
+        await _target.create();
         assert.deepEqual(_dbReaderObject.none.notCalled, true, "Reader connection should not be used when writting");
         assert.deepEqual(_dbWriterObject.none.calledOnce, true);
         assert.deepEqual(_target.columnsNames, ["time", "tagid", "value", "quality"], "Column names are not equal.");
@@ -76,7 +76,6 @@ describe('PartionPg Unit Tests', function () {
 
     it('should not execute any sql when loading a table', async function () {
 
-        await _target.load(_staticSampleType);
         assert.deepEqual(_dbReaderObject.none.notCalled, true);
         assert.deepEqual(_dbWriterObject.none.notCalled, true);
         assert.deepEqual(_target.columnsNames, ["time", "tagid", "value", "quality"], "Column names are not equal.");
@@ -94,7 +93,6 @@ describe('PartionPg Unit Tests', function () {
             [999, 2, 2.5, 2],
         ]
 
-        await _target.load(_staticSampleType);
         await _target.upsert(insertpayload);
         assert.deepEqual(_dbReaderObject.none.notCalled, true, "Reader connection should not be used when writting");
         assert.deepEqual(_dbWriterObject.none.calledOnce, true);
@@ -116,7 +114,6 @@ describe('PartionPg Unit Tests', function () {
             [1000, 2, 2.5, 2],
         ]
 
-        await _target.load(_staticSampleType);
         await _target.upsert(insertpayload);
         assert.deepEqual(_dbReaderObject.none.notCalled, true, "Reader connection should not be used when writting");
         assert.deepEqual(_dbWriterObject.none.callCount, 2);
@@ -131,7 +128,7 @@ describe('PartionPg Unit Tests', function () {
             WHERE "time" BETWEEN 0 AND 998  ;`;
 
         _dbReaderObject.any = sinon.fake.returns(['a']);
-        await _target.load(_staticSampleType);
+
         let result = await _target.readRange(0, 998);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
         assert.deepEqual(_dbReaderObject.any.calledOnce, true);
@@ -149,7 +146,6 @@ describe('PartionPg Unit Tests', function () {
         table404.code = "42P01";
         _dbReaderObject.any = sinon.fake.rejects(table404);
 
-        await _target.load(_staticSampleType);
         let result = await _target.readRange(0, 998);
 
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
@@ -180,7 +176,6 @@ describe('PartionPg Unit Tests', function () {
             }
         });
 
-        await _target.load(_staticSampleType);
         let result = await _target.readRange(0, 1001);
         assert.deepEqual(_dbWriterObject.any.notCalled, true);
         assert.deepEqual(_dbReaderObject.any.callCount, 2);
@@ -204,7 +199,6 @@ describe('PartionPg Unit Tests', function () {
             }
         });
 
-        await _target.load(_staticSampleType);
         let filters = [
             {
                 "name": "quality",
@@ -252,7 +246,6 @@ describe('PartionPg Unit Tests', function () {
             }
         });
 
-        await _target.load(_staticSampleType);
         let filters = [
             {
                 "name": "tagid",
@@ -282,7 +275,6 @@ describe('PartionPg Unit Tests', function () {
             }
         });
 
-        await _target.load(_staticSampleType);
         let filters = [
             {
                 "name": "quality",
@@ -329,7 +321,6 @@ describe('PartionPg Unit Tests', function () {
             }
         });
 
-        await _target.load(_staticSampleType);
         let selectiveColumns = [
             _target.columnsNames.findIndex(c => c === "tagid")
         ];
@@ -378,7 +369,6 @@ describe('PartionPg Unit Tests', function () {
             }
         });
 
-        await _target.load(_staticSampleType);
         let selectiveColumns = [
             _target.columnsNames.findIndex(c => c === "tagid")
         ];
@@ -405,7 +395,6 @@ describe('PartionPg Unit Tests', function () {
             }
         });
 
-        await _target.load(_staticSampleType);
         let filters = [
             {
                 "name": "quality",
@@ -429,7 +418,6 @@ describe('PartionPg Unit Tests', function () {
         let unknownError = new Error("Faked unknown error");
         _dbReaderObject.any = sinon.fake.rejects(unknownError);
 
-        await _target.load(_staticSampleType);
         let result;
         try {
             result = await _target.readRange(0, 998);

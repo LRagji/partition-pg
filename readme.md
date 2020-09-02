@@ -20,7 +20,7 @@ This simple package is based on pg-promise which provides you with following fea
 ## Examples/Code snippets
 
 ```javascript
-const targetType = require('partition-pg').PartionPg;
+const targetType = require('partition-pg').default;
 const pgp = require('pg-promise')();
 const defaultConectionString = "postgres://postgres:mysecretpassword@localhost:5432/pgpartition?application_name=perf-test";
 const tableName = "Raw", schemaName = "Anukram";
@@ -60,10 +60,10 @@ const tableSchema = [
     "datatype": "integer",
     "filterable": { "sorted": "asc" },
 }];
- const partitionManager = new targetType(_dbRConnection, _dbWConnection, schemaName, tableName);
+ const partitionManager = new targetType(_dbRConnection, _dbWConnection, schemaName, tableName,tableSchema);
 
 //Create the table definition in database.
-  await _target.define(tableSchema);
+  await partitionManager.create();
 
 //Insert or Update data based on primary key.
 let insertpayload = [
@@ -74,7 +74,7 @@ let insertpayload = [
 await partitionManager.upsert(insertpayload);
 
 //Read data by range.
-let result = await _target.readRange(0, 998);
+let result = await partitionManager.readRange(0, 998);
 
 ```
 

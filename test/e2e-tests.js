@@ -1,11 +1,9 @@
 const assert = require('assert');
-const targetType = require('../index');
+const targetType = require('../dist/index').default;
 const pgp = require('pg-promise')();
 const defaultConectionString = "postgres://postgres:mysecretpassword@localhost:5432/pgpartition?application_name=perf-test";
 const utils = require('./utilities');
 const localUtils = new utils();
-
-let _target = {};
 let _staticSampleType = [{
     "name": "time",
     "datatype": "bigint",
@@ -29,12 +27,13 @@ let _staticSampleType = [{
     "datatype": "integer",
     "filterable": { "sorted": "asc" },
 }];
-
+let tableName = "Raw", schemaName = "Anukram";
+let _dbRConnection, _dbWConnection;
 
 describe('End to End Tests', function () {
 
     this.beforeEach(async function () {
-        let tableName = "Raw", schemaName = "Anukram";
+
         const readConfigParams = {
             connectionString: defaultConectionString,
             application_name: "e2e Test",
@@ -45,10 +44,9 @@ describe('End to End Tests', function () {
             application_name: "e2e Test",
             max: 2 //2 Writer
         };
-        const _dbRConnection = pgp(readConfigParams);
-        const _dbWConnection = pgp(writeConfigParams);
+        _dbRConnection = pgp(readConfigParams);
+        _dbWConnection = pgp(writeConfigParams);
         await localUtils.cleanDBInChunks(_dbRConnection, schemaName);
-        _target = new targetType(_dbRConnection, _dbWConnection, schemaName, tableName);
     });
 
     this.afterEach(async function () {
@@ -57,7 +55,8 @@ describe('End to End Tests', function () {
 
     it('should be able to save and retrive static samples', async function () {
 
-        await _target.define(_staticSampleType);
+        const _target = new targetType(_dbRConnection, _dbWConnection, schemaName, tableName, _staticSampleType);
+        await _target.create();
         let insertpayload = [
             [0, 1, 1.5, 1],
             [999, 2, 2.5, 2],
@@ -69,7 +68,8 @@ describe('End to End Tests', function () {
 
     it('should be able ingest static samples in parallel', async function () {
 
-        await _target.define(_staticSampleType);
+        const _target = new targetType(_dbRConnection, _dbWConnection, schemaName, tableName, _staticSampleType);
+        await _target.create();
         let insertpayload1 = [], insertpayload2 = [];
         let epoch = 0;
         for (let index = 0; index < 1000; index++) {
@@ -92,7 +92,8 @@ describe('End to End Tests', function () {
 
     it('should return empty result when called with range outside of data ingested', async function () {
 
-        await _target.define(_staticSampleType);
+        const _target = new targetType(_dbRConnection, _dbWConnection, schemaName, tableName, _staticSampleType);
+        await _target.create();
         let insertpayload = [
             [0, 1, 1.5, 1],
             [999, 2, 2.5, 2],

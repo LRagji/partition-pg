@@ -11,6 +11,7 @@
 // Add peer dependency for PG
 // Add readme
 // Add validation for non negative reads and widths This lib only supports positive numbers for partition.
+// How can we make sure primary key is primary across tables.
 const pgp = require('pg-promise');
 import { default as MapPolyFill } from 'ts-map'; //MapPolyFill
 
@@ -54,11 +55,12 @@ export default class PartionPg {
     columnsNames: Array<string>;
 
     //Private Fields
+    #definition: Array<definition>;
     #partitionKey: internalePartitionKey;
     #dbReader: any;
     #dbWriter: any;
 
-    constructor(pgpReaderConnection: any, pgpWriterConnection: any, schemaName: string, name: string) {
+    constructor(pgpReaderConnection: any, pgpWriterConnection: any, schemaName: string, name: string, definition: Array<definition>) {
 
         this.filterOperators = new MapPolyFill<string, (operands: Array<any>) => any>();
         this.filterOperators.set("=", function (operands: Array<any>) { return operands[0] });
@@ -71,8 +73,7 @@ export default class PartionPg {
         this.datatypes.set("double", "double precision");
 
         //Public functions
-        this.load = this.load.bind(this);
-        this.define = this.define.bind(this);
+        this.create = this.create.bind(this);
         this.upsert = this.upsert.bind(this);
         this.readRange = this.readRange.bind(this);
         //this.readIn = this.readIn.bind(this);
@@ -85,22 +86,17 @@ export default class PartionPg {
         this.tableName = name;
         this.columnsNames = [];
 
-        this.#partitionKey = { "index": -1, "range": -1 };
-    }
-
-    load(definition: Array<definition>) {
         let index = definition.findIndex(c => c.key != undefined);
         this.#partitionKey = { "index": index, "range": definition[index].key.range };
         this.columnsNames = definition.map(e => pgp.as.format('$1:alias', [e.name]));
-
+        this.#definition = definition;
     }
 
-    async define(definition: Array<definition>) {
+    async create() {
 
-        this.load(definition);
-        let tableColumns = definition.reduce(this.#generateSqlTableColumns, "");
-        let indexColumns = definition.reduce(this.#generateSqlIndexColumns, "");
-        let primaryKeyColumns = definition.reduce(this.#generatePrimaryKeyConstraintColumns, "");
+        let tableColumns = this.#definition.reduce(this.#generateSqlTableColumns, "");
+        let indexColumns = this.#definition.reduce(this.#generateSqlIndexColumns, "");
+        let primaryKeyColumns = this.#definition.reduce(this.#generatePrimaryKeyConstraintColumns, "");
         primaryKeyColumns = primaryKeyColumns.slice(0, -1);
         tableColumns = tableColumns.slice(0, -1);
         indexColumns = indexColumns.slice(0, -1);
