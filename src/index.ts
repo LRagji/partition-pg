@@ -19,7 +19,7 @@ interface internalePartitionKey {
     index: number
 }
 
-interface condition {
+export interface condition {
     "condition-index": number,
     using: "and" | "or"
 }
@@ -30,10 +30,10 @@ export interface filter {
     combine: condition
 }
 
-interface partitionKey {
+export interface partitionKey {
     range: number
 }
-interface filterable {
+export interface filterable {
     sorted: string
 }
 export interface definition {
