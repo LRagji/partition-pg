@@ -500,7 +500,7 @@ const payloadType = 'Type1';
 const payloadMaxKey = payloadType + "-Max";
 const payloadMinKey = payloadType + "-Min";
 
-let getIdentity = (range) => new Promise((resolve, reject) => scriptManager.run('distrubution', [payloadType, 'DBS', "CDB", "MT", "MR"], [range], function (err, result) {
+let getIdentity = (range) => new Promise((resolve, reject) => scriptManager.run('identity', [payloadType, 'Inventory'], [range], function (err, result) {
     if (err != undefined) {
         reject(err);
         return;
@@ -520,7 +520,7 @@ let main = async () => {
 
     console.time("Acquiring Identity");
     let identity = await getIdentity(payload.length)
-    if (identity[0] != 0) { //Partial failures will be forced into the last table its better than to fail the call.
+    if (identity[0] == -1) { //Partial failures will be forced into the last table its better than to fail the call.
         console.error("Error:(" + identity[0] + ") " + identity[1])
         return;
     }
@@ -538,7 +538,7 @@ let main = async () => {
             lastChange = { "Element": t, "Name": `${payloadType}-${t[1]}-${t[2]}` };
         }
         value.Id = lastChange.Name + "-" + lastChange.Element[3];
-        lastChange.Element[3]--;
+        lastChange.Element[3]++;
         let group = groups.get(lastChange.Name);
         if (group == undefined) {
             groups.set(lastChange.Name, { "Min": value.time, "Max": value.time, "Elements": [value] });
@@ -571,8 +571,8 @@ let main = async () => {
         accept(result);
     }));
     let tablesToQuery = await queryTables(payloadMaxKey, payloadMinKey, 300, 10000)
-    console.table(tablesToQuery);
     console.timeEnd("Query");
+    console.table(tablesToQuery);
 
     //fs.appendFileSync('log.csv', `Key,Min,Max,Time`);
     //groupedSql.forEach(logMapElements);
@@ -595,6 +595,15 @@ main().then((r) => redisClient.disconnect());
 // Indexing: 527.946ms
 // Total Groups:3961
 //Query: 31.613ms
+
+//=>Partly Optimized
+
+// Payload Generation: 63.092ms
+// Acquiring Identity: 567.414ms
+// Transforming: 1832.168ms
+// Indexing: 665.969ms
+// Total Groups:4000
+// Query: 26.358ms
 
 // 127.0.0.1:6379> KEYS *
 // 1) "CDB"
