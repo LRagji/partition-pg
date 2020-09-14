@@ -486,3 +486,132 @@ module.exports = class PartionPg {
 // else {
 //     console.log("Passed");
 // }
+
+
+var Scripto = require('redis-scripto');
+const fs = require('fs');
+var path = require('path');
+const redisType = require("ioredis");
+const defaultRedisConnectionString = "redis://127.0.0.1:6379/";
+let redisClient = new redisType(defaultRedisConnectionString);
+var scriptManager = new Scripto(redisClient);
+scriptManager.loadFromDir(path.resolve(path.dirname(__filename), 'lua'));
+const payloadType = 'Type1';
+const payloadMaxKey = payloadType + "-Max";
+const payloadMinKey = payloadType + "-Min";
+
+let getIdentity = (range) => new Promise((resolve, reject) => scriptManager.run('distrubution', [payloadType, 'DBS', "CDB", "MT", "MR"], [range], function (err, result) {
+    if (err != undefined) {
+        reject(err);
+        return;
+    }
+    resolve(result)
+}))
+
+let main = async () => {
+    let ctr = 400000;
+    let payload = [];
+    console.time("Payload Generation");
+    while (ctr > 0) {
+        payload.push({ "time": ctr, "AlertId": ctr })
+        ctr--;
+    }
+    console.timeEnd("Payload Generation");
+
+    console.time("Acquiring Identity");
+    let identity = await getIdentity(payload.length)
+    if (identity[0] != 0) { //Partial failures will be forced into the last table its better than to fail the call.
+        console.error("Error:(" + identity[0] + ") " + identity[1])
+        return;
+    }
+    identity.splice(0, 1);
+    console.timeEnd("Acquiring Identity");
+
+    console.time("Transforming");
+    let lastChange = null;
+    let groupedSql = payload.reduceRight((groups, value, idx) => {
+        idx = idx + 1;
+        let changeIdx = identity.findIndex(e => e[0] == idx);
+        if (changeIdx == -1 && lastChange == null) throw new Error("Did not find start index");
+        if (changeIdx != -1) {
+            let t = identity.splice(changeIdx, 1)[0];
+            lastChange = { "Element": t, "Name": `${payloadType}-${t[1]}-${t[2]}` };
+        }
+        value.Id = lastChange.Name + "-" + lastChange.Element[3];
+        lastChange.Element[3]--;
+        let group = groups.get(lastChange.Name);
+        if (group == undefined) {
+            groups.set(lastChange.Name, { "Min": value.time, "Max": value.time, "Elements": [value] });
+        } else {
+            group.Min = group.Min > value.time ? value.time : group.Min;
+            group.Max = group.Max < value.time ? value.time : group.Max;
+            group.Elements.push(value);
+        }
+        return groups;
+    }, new Map())
+    console.timeEnd("Transforming");
+
+    console.time("Indexing");
+    let indexer = (maxKey, minKey, max, min, tableName) => new Promise((accept, reject) => scriptManager.run('indexing', [maxKey, minKey], [max, min, tableName], function (err, result) {
+        if (err) { reject(err); return }
+        accept(result);
+    }));
+    let allPromisses = [];
+    groupedSql.forEach((def, tableName) => {
+        allPromisses.push(indexer(payloadMaxKey, payloadMinKey, def.Max, def.Min, tableName));
+    });
+    await Promise.allSettled(allPromisses);
+    console.timeEnd("Indexing");
+
+    console.log("Total Groups:" + groupedSql.size);
+
+    console.time("Query");
+    let queryTables = (maxKey, minKey, max, min) => new Promise((accept, reject) => scriptManager.run('query', [maxKey, minKey], [max, min], function (err, result) {
+        if (err) { reject(err); return }
+        accept(result);
+    }));
+    let tablesToQuery = await queryTables(payloadMaxKey, payloadMinKey, 300, 10000)
+    console.table(tablesToQuery);
+    console.timeEnd("Query");
+
+    //fs.appendFileSync('log.csv', `Key,Min,Max,Time`);
+    //groupedSql.forEach(logMapElements);
+}
+
+function logMapElements(value, key) {
+    value.Elements.forEach((v) => {
+        //fs.appendFileSync('log.csv', `${key},${value.Min},${value.Max},${v.time}`);
+        //console.log(`Table:${key} Min:${value.Min} Max:${value.Max} Time:${v.time} Id:${v.Id}`)
+    })
+}
+main().then((r) => redisClient.disconnect());
+
+
+//ZADD DBS 1 "1,10000,100"
+// 400000 Rows Redis 0.7MB 
+// Payload Generation: 64.402ms
+// Acquiring Identity: 13289.518ms
+// Transforming: 1630.864ms
+// Indexing: 527.946ms
+// Total Groups:3961
+//Query: 31.613ms
+
+// 127.0.0.1:6379> KEYS *
+// 1) "CDB"
+// 2) "Type1-Max"
+// 3) "MR"
+// 4) "Type1"
+// 5) "MT"
+// 6) "Type1-Min"
+// 127.0.0.1:6379> Memory usage CDB
+// (integer) 45
+// 127.0.0.1:6379> Memory usage Type1-Max
+// (integer) 356668
+// 127.0.0.1:6379> Memory usage Type1-Min
+// (integer) 375681
+// 127.0.0.1:6379> Memory usage Type1
+// (integer) 76
+// 127.0.0.1:6379> Memory usage MR
+// (integer) 44
+// 127.0.0.1:6379> Memory usage MT
+// (integer) 44
