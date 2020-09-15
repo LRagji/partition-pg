@@ -1,4 +1,5 @@
 -- Need a Math equivalent of this which can be optimized.
+-- Need limits on this call
 local max_key = KEYS[1]
 local min_key = KEYS[2]
 local query_start = tonumber(ARGV[1])
