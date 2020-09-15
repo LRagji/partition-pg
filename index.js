@@ -625,7 +625,7 @@ module.exports = class PartionPg {
 // (integer) 44
 
 //const defaultConectionString = "postgres://postgres:mysecretpassword@localhost:5432/pgpartition?application_name=perf-test";
-const defaultConectionString = "postgres://postgres:@localhost:5432/postgres";
+const defaultConectionString = "postgres://postgres:@localhost:5432/Infinity-Index";
 const defaultRedisConnectionString = "redis://127.0.0.1:6379/";
 const readConfigParams = {
     connectionString: defaultConectionString,
@@ -658,18 +658,73 @@ let Table1 = [{
 const infTableType = require('./infinity-table');
 
 const infTableFactory = new infTableType(defaultRedisConnectionString, readConfigParams, writeConfigParams)
+const readConfigParamsDB1 = {
+    connectionString: "postgres://postgres:@localhost:5432/Infinity-1",
+    application_name: "e2e Test",
+    max: 4 //4 readers
+};
+const writeConfigParamsDB1 = {
+    connectionString: "postgres://postgres:@localhost:5432/Infinity-1",
+    application_name: "e2e Test",
+    max: 2 //2 Writer
+};
+let TypeId = 5;
+let boundlessTable;
 let main = async () => {
-    // let resourceId = await infTableFactory.registerResource(readConfigParams, writeConfigParams, 100, 10);
-    // console.log("Resource Id:" + resourceId);
+    if (TypeId == undefined) {
+        let resourceId = await infTableFactory.registerResource(readConfigParamsDB1, writeConfigParamsDB1, 1000, 100);
+        console.log("Resource Id:" + resourceId);
+        boundlessTable = await infTableFactory.createTable(Table1);
+        TypeId = boundlessTable.TableIdentifier;
+        console.log("Type Created: " + TypeId);
+        return;
+    }
+    else {
+        boundlessTable = await infTableFactory.loadTable(TypeId);
+    }
 
-    let boundlessTable = await infTableFactory.createTable(Table1);
-    
-    let result = await boundlessTable.bulkInsert([
-        [0, 1, 1.5, 1],
-        [999, 2, 2.5, 2],
-    ]);
-    console.log(result);
+    let ctr = 40000;
+    let payload = [];
+    console.time("Payload Generation");
+    while (ctr > 0) {
+        payload.push([ctr, ctr, ctr, ctr])
+        ctr--;
+    }
+    console.timeEnd("Payload Generation");
+
+    console.time("Insertion");
+    let result = await boundlessTable.bulkInsert(payload);
+    console.timeEnd("Insertion");
+
+    //console.log(result);
     boundlessTable.codeRed();
 };
 
-main().then((r) => infTableFactory.codeRed());
+main().then((r) => {
+  
+    infTableFactory.codeRed();
+});
+
+
+// CREATE TABLE public."Resources"
+// (
+//     "Id" bigserial,
+//     "Read" text NOT NULL,
+//     "Write" text NOT NULL,
+//     "MaxTables" integer NOT NULL,
+//     "MaxRows" integer NOT NULL,
+//     PRIMARY KEY ("Id")
+// );
+
+// CREATE TABLE public."Types"
+// (
+//     "Id" bigserial,
+//     "Def" text[] NOT NULL,
+//     PRIMARY KEY ("Id")
+// );
+
+//40K
+// Payload Generation: 6.198ms
+// Acquiring Identity: 62.97509765625ms
+// Transforming: 48.083ms
+// Inserting: 3284.655ms

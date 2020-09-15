@@ -13,6 +13,7 @@ module.exports = class InfinityTableFactory {
     #redisClient
     #scriptingEngine
     #configDBWriter
+    #configDBReader
 
     constructor(indexerRedisConnectionString, pgReadConfigParams, pgWriteConfigParams) {
         this.#pgReadConfigParams = pgReadConfigParams;
@@ -21,9 +22,11 @@ module.exports = class InfinityTableFactory {
         this.#scriptingEngine = new scripto(this.#redisClient);
         this.#scriptingEngine.loadFromDir(path.resolve(path.dirname(__filename), 'lua'));
         this.#configDBWriter = pgp(pgWriteConfigParams);
+        this.#configDBReader = pgp(pgReadConfigParams);
 
         this.registerResource = this.registerResource.bind(this);
         this.createTable = this.createTable.bind(this);
+        this.loadTable = this.loadTable.bind(this);
 
         this.codeRed = () => {
             this.#redisClient.disconnect();
@@ -67,11 +70,19 @@ module.exports = class InfinityTableFactory {
             return new InfinityTable(this.#pgReadConfigParams, this.#indexerRedisConnectionString, tIdentifier.Id, tableDefinition);
         });
     }
+
+    async loadTable(TableIdentifier) {
+        let tableDef = await this.#configDBReader.one('SELECT "Def" FROM "Types" WHERE "Id"=$1', [TableIdentifier]);
+        if (tableDef == undefined) {
+            throw new Error(`Table with id does ${TableIdentifier} not exists.`);
+        }
+        tableDef = tableDef.Def.map(e => JSON.parse(e));
+        return new InfinityTable(this.#pgReadConfigParams, this.#indexerRedisConnectionString, TableIdentifier, tableDef);
+    }
 }
 
 class InfinityTable {
     #configDBReader
-    #systemTableIdentifier
     #def
     #connectionMap
     #redisClient
@@ -80,7 +91,7 @@ class InfinityTable {
 
     constructor(configReaderConnectionParams, indexerRedisConnectionString, systemTableIdentifier, tableDefinition) {
         this.#configDBReader = pgp(configReaderConnectionParams);
-        this.#systemTableIdentifier = systemTableIdentifier;
+        this.TableIdentifier = systemTableIdentifier;
         this.#def = tableDefinition;
         this.#connectionMap = new Map();
         this.#redisClient = new redisType(indexerRedisConnectionString);
@@ -111,7 +122,7 @@ class InfinityTable {
     }
 
     #generateIdentity = (range) => {
-        return new Promise((resolve, reject) => this.#scriptingEngine.run('identity', [this.#systemTableIdentifier, inventory_key], [range], function (err, result) {
+        return new Promise((resolve, reject) => this.#scriptingEngine.run('identity', [this.TableIdentifier, inventory_key], [range], function (err, result) {
             if (err != undefined) {
                 reject(err);
                 return;
@@ -179,7 +190,7 @@ class InfinityTable {
         tableColumns = tableColumns.slice(0, -1);
         indexColumns = indexColumns.slice(0, -1);
 
-        let functionSql = `CREATE FUNCTION $[schema_name:name].$[function_name:name] (IN name TEXT) RETURNS VOID
+        let functionSql = `CREATE OR REPLACE FUNCTION $[schema_name:name].$[function_name:name] (IN name TEXT) RETURNS VOID
         LANGUAGE 'plpgsql'
         AS $$
         DECLARE
@@ -195,15 +206,15 @@ class InfinityTable {
         END$$;`;
         await currentWriterConnection.none(pgp.as.format(functionSql, {
             "schema_name": default_schema,
-            "function_name": ("infinity_part_" + this.#systemTableIdentifier),
-            "table_name": this.#systemTableIdentifier,
+            "function_name": ("infinity_part_" + this.TableIdentifier),
+            "table_name": this.TableIdentifier + "-" + databaseId,
             "columns": tableColumns,
             "primaryKeyColumns": primaryKeyColumns,
             "indexColumns": indexColumns
         }));
 
-        await currentWriterConnection.one(`SELECT "${default_schema}"."infinity_part_${this.#systemTableIdentifier}"('${tableId}')`);
-        return `${this.#systemTableIdentifier}-${tableId}`;
+        await currentWriterConnection.one(`SELECT "${default_schema}"."infinity_part_${this.TableIdentifier}"('${tableId}')`);
+        return `${this.TableIdentifier}-${databaseId}-${tableId}`;
     }
 
     #sqlTransform = (tableName, payload) => {
@@ -216,11 +227,8 @@ class InfinityTable {
     }
 
     async bulkInsert(payload) {
-        console.time("Acquiring Identity");
         let identities = await this.#generateIdentity(payload.length);
-        console.timeEnd("Acquiring Identity");
 
-        console.time("Transforming");
         let lastChange = null;
         let groupedPayloads = payload.reduceRight((groups, value, idx) => {
             idx = idx + 1;
@@ -232,7 +240,7 @@ class InfinityTable {
             let dbId = lastChange[1];
             let tableId = lastChange[2];
             let scopedRowId = lastChange[3];
-            let rowId = `${this.#systemTableIdentifier}-${dbId}-${tableId}-${scopedRowId}`;
+            let rowId = `${this.TableIdentifier}-${dbId}-${tableId}-${scopedRowId}`;
             lastChange[3]++;
             value.unshift(scopedRowId);
             let item = { "Id": rowId, "V": value };
@@ -252,11 +260,9 @@ class InfinityTable {
                 }
             }
             return groups;
-        }, new Map())
-        console.timeEnd("Transforming");
+        }, new Map());
 
-        console.time("Inserting");
-        let results = { "failures": [] };
+        let results = { "failures": [], "success": [] };
         let DBIds = Array.from(groupedPayloads.keys());
         for (let dbIdx = 0; dbIdx < DBIds.length; dbIdx++) {
             const dbId = DBIds[dbIdx];
@@ -268,19 +274,22 @@ class InfinityTable {
                 try {
                     const tableName = await this.#teraformTableSpace(dbId, tableId);
                     const DBWritter = this.#connectionMap.get(dbId)["W"];
-                    results = await DBWritter.tx(async trans => {
+                    const insertedRows = await DBWritter.tx(async trans => {
                         let sql = this.#sqlTransform(tableName, items);
                         return trans.many(sql);
                     });
+                    results.success.push(insertedRows.map(e => {
+                        e.InfId = tableName + "-" + e.InfId;
+                        return e;
+                    }));
                 }
                 catch (err) {
                     results.failures.push({ "Error": err, "Items": items });
                     continue;
+                    //TODO: Reclaim Lost Ids
                 }
             }
-
         }
-        console.timeEnd("Inserting");
         return results;
     }
 
