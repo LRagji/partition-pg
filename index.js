@@ -62,7 +62,6 @@ module.exports = class PartionPg {
         let index = definition.findIndex(c => c.key != undefined);
         this._partitionKey = { "index": index, "range": parseInt(definition[index].key.range) };
         this.columnsNames = definition.map(e => pgp.as.format('$1:alias', [e.name]));
-
     }
 
     async define(definition) {
@@ -488,103 +487,103 @@ module.exports = class PartionPg {
 // }
 
 
-var Scripto = require('redis-scripto');
-const fs = require('fs');
-var path = require('path');
-const redisType = require("ioredis");
-const defaultRedisConnectionString = "redis://127.0.0.1:6379/";
-let redisClient = new redisType(defaultRedisConnectionString);
-var scriptManager = new Scripto(redisClient);
-scriptManager.loadFromDir(path.resolve(path.dirname(__filename), 'lua'));
-const payloadType = 'Type1';
-const payloadMaxKey = payloadType + "-Max";
-const payloadMinKey = payloadType + "-Min";
+// var Scripto = require('redis-scripto');
+// const fs = require('fs');
+// var path = require('path');
+// const redisType = require("ioredis");
+//  const defaultRedisConnectionString = "redis://127.0.0.1:6379/";
+// let redisClient = new redisType(defaultRedisConnectionString);
+// var scriptManager = new Scripto(redisClient);
+// scriptManager.loadFromDir(path.resolve(path.dirname(__filename), 'lua'));
+// const payloadType = 'Type1';
+// const payloadMaxKey = payloadType + "-Max";
+// const payloadMinKey = payloadType + "-Min";
 
-let getIdentity = (range) => new Promise((resolve, reject) => scriptManager.run('identity', [payloadType, 'Inventory'], [range], function (err, result) {
-    if (err != undefined) {
-        reject(err);
-        return;
-    }
-    resolve(result)
-}))
+// let getIdentity = (range) => new Promise((resolve, reject) => scriptManager.run('identity', [payloadType, 'Inventory'], [range], function (err, result) {
+//     if (err != undefined) {
+//         reject(err);
+//         return;
+//     }
+//     resolve(result)
+// }))
 
-let main = async () => {
-    let ctr = 400000;
-    let payload = [];
-    console.time("Payload Generation");
-    while (ctr > 0) {
-        payload.push({ "time": ctr, "AlertId": ctr })
-        ctr--;
-    }
-    console.timeEnd("Payload Generation");
+// let main = async () => {
+//     let ctr = 400000;
+//     let payload = [];
+//     console.time("Payload Generation");
+//     while (ctr > 0) {
+//         payload.push({ "time": ctr, "AlertId": ctr })
+//         ctr--;
+//     }
+//     console.timeEnd("Payload Generation");
 
-    console.time("Acquiring Identity");
-    let identity = await getIdentity(payload.length)
-    if (identity[0] == -1) { //Partial failures will be forced into the last table its better than to fail the call.
-        console.error("Error:(" + identity[0] + ") " + identity[1])
-        return;
-    }
-    identity.splice(0, 1);
-    console.timeEnd("Acquiring Identity");
+//     console.time("Acquiring Identity");
+//     let identity = await getIdentity(payload.length)
+//     if (identity[0] == -1) { //Partial failures will be forced into the last table its better than to fail the call.
+//         console.error("Error:(" + identity[0] + ") " + identity[1])
+//         return;
+//     }
+//     identity.splice(0, 1);
+//     console.timeEnd("Acquiring Identity");
 
-    console.time("Transforming");
-    let lastChange = null;
-    let groupedSql = payload.reduceRight((groups, value, idx) => {
-        idx = idx + 1;
-        let changeIdx = identity.findIndex(e => e[0] == idx);
-        if (changeIdx == -1 && lastChange == null) throw new Error("Did not find start index");
-        if (changeIdx != -1) {
-            let t = identity.splice(changeIdx, 1)[0];
-            lastChange = { "Element": t, "Name": `${payloadType}-${t[1]}-${t[2]}` };
-        }
-        value.Id = lastChange.Name + "-" + lastChange.Element[3];
-        lastChange.Element[3]++;
-        let group = groups.get(lastChange.Name);
-        if (group == undefined) {
-            groups.set(lastChange.Name, { "Min": value.time, "Max": value.time, "Elements": [value] });
-        } else {
-            group.Min = group.Min > value.time ? value.time : group.Min;
-            group.Max = group.Max < value.time ? value.time : group.Max;
-            group.Elements.push(value);
-        }
-        return groups;
-    }, new Map())
-    console.timeEnd("Transforming");
+//     console.time("Transforming");
+//     let lastChange = null;
+//     let groupedSql = payload.reduceRight((groups, value, idx) => {
+//         idx = idx + 1;
+//         let changeIdx = identity.findIndex(e => e[0] == idx);
+//         if (changeIdx == -1 && lastChange == null) throw new Error("Did not find start index");
+//         if (changeIdx != -1) {
+//             let t = identity.splice(changeIdx, 1)[0];
+//             lastChange = { "Element": t, "Name": `${payloadType}-${t[1]}-${t[2]}` };
+//         }
+//         value.Id = lastChange.Name + "-" + lastChange.Element[3];
+//         lastChange.Element[3]++;
+//         let group = groups.get(lastChange.Name);
+//         if (group == undefined) {
+//             groups.set(lastChange.Name, { "Min": value.time, "Max": value.time, "Elements": [value] });
+//         } else {
+//             group.Min = group.Min > value.time ? value.time : group.Min;
+//             group.Max = group.Max < value.time ? value.time : group.Max;
+//             group.Elements.push(value);
+//         }
+//         return groups;
+//     }, new Map())
+//     console.timeEnd("Transforming");
 
-    console.time("Indexing");
-    let indexer = (maxKey, minKey, max, min, tableName) => new Promise((accept, reject) => scriptManager.run('indexing', [maxKey, minKey], [max, min, tableName], function (err, result) {
-        if (err) { reject(err); return }
-        accept(result);
-    }));
-    let allPromisses = [];
-    groupedSql.forEach((def, tableName) => {
-        allPromisses.push(indexer(payloadMaxKey, payloadMinKey, def.Max, def.Min, tableName));
-    });
-    await Promise.allSettled(allPromisses);
-    console.timeEnd("Indexing");
+//     console.time("Indexing");
+//     let indexer = (maxKey, minKey, max, min, tableName) => new Promise((accept, reject) => scriptManager.run('indexing', [maxKey, minKey], [max, min, tableName], function (err, result) {
+//         if (err) { reject(err); return }
+//         accept(result);
+//     }));
+//     let allPromisses = [];
+//     groupedSql.forEach((def, tableName) => {
+//         allPromisses.push(indexer(payloadMaxKey, payloadMinKey, def.Max, def.Min, tableName));
+//     });
+//     await Promise.allSettled(allPromisses);
+//     console.timeEnd("Indexing");
 
-    console.log("Total Groups:" + groupedSql.size);
+//     console.log("Total Groups:" + groupedSql.size);
 
-    console.time("Query");
-    let queryTables = (maxKey, minKey, max, min) => new Promise((accept, reject) => scriptManager.run('query', [maxKey, minKey], [max, min], function (err, result) {
-        if (err) { reject(err); return }
-        accept(result);
-    }));
-    let tablesToQuery = await queryTables(payloadMaxKey, payloadMinKey, 300, 10000)
-    console.timeEnd("Query");
-    console.table(tablesToQuery);
+//     console.time("Query");
+//     let queryTables = (maxKey, minKey, max, min) => new Promise((accept, reject) => scriptManager.run('query', [maxKey, minKey], [max, min], function (err, result) {
+//         if (err) { reject(err); return }
+//         accept(result);
+//     }));
+//     let tablesToQuery = await queryTables(payloadMaxKey, payloadMinKey, 300, 10000)
+//     console.timeEnd("Query");
+//     console.table(tablesToQuery);
 
-    //fs.appendFileSync('log.csv', `Key,Min,Max,Time`);
-    //groupedSql.forEach(logMapElements);
-}
+//     //fs.appendFileSync('log.csv', `Key,Min,Max,Time`);
+//     //groupedSql.forEach(logMapElements);
+// }
 
-function logMapElements(value, key) {
-    value.Elements.forEach((v) => {
-        //fs.appendFileSync('log.csv', `${key},${value.Min},${value.Max},${v.time}`);
-        //console.log(`Table:${key} Min:${value.Min} Max:${value.Max} Time:${v.time} Id:${v.Id}`)
-    })
-}
-main().then((r) => redisClient.disconnect());
+// function logMapElements(value, key) {
+//     value.Elements.forEach((v) => {
+//         //fs.appendFileSync('log.csv', `${key},${value.Min},${value.Max},${v.time}`);
+//         //console.log(`Table:${key} Min:${value.Min} Max:${value.Max} Time:${v.time} Id:${v.Id}`)
+//     })
+// }
+// main().then((r) => redisClient.disconnect());
 
 
 //ZADD DBS 1 "1,10000,100"
@@ -624,3 +623,53 @@ main().then((r) => redisClient.disconnect());
 // (integer) 44
 // 127.0.0.1:6379> Memory usage MT
 // (integer) 44
+
+//const defaultConectionString = "postgres://postgres:mysecretpassword@localhost:5432/pgpartition?application_name=perf-test";
+const defaultConectionString = "postgres://postgres:@localhost:5432/postgres";
+const defaultRedisConnectionString = "redis://127.0.0.1:6379/";
+const readConfigParams = {
+    connectionString: defaultConectionString,
+    application_name: "e2e Test",
+    max: 4 //4 readers
+};
+const writeConfigParams = {
+    connectionString: defaultConectionString,
+    application_name: "e2e Test",
+    max: 2 //2 Writer
+};
+let Table1 = [{
+    "name": "time",
+    "datatype": "bigint",
+    "filterable": { "sorted": "desc" }
+},
+{
+    "name": "tagid",
+    "datatype": "integer"
+},
+{
+    "name": "value",
+    "datatype": "double",
+},
+{
+    "name": "quality",
+    "datatype": "integer",
+    "filterable": { "sorted": "asc" },
+}];
+const infTableType = require('./infinity-table');
+
+const infTableFactory = new infTableType(defaultRedisConnectionString, readConfigParams, writeConfigParams)
+let main = async () => {
+    // let resourceId = await infTableFactory.registerResource(readConfigParams, writeConfigParams, 100, 10);
+    // console.log("Resource Id:" + resourceId);
+
+    let boundlessTable = await infTableFactory.createTable(Table1);
+    
+    let result = await boundlessTable.bulkInsert([
+        [0, 1, 1.5, 1],
+        [999, 2, 2.5, 2],
+    ]);
+    console.log(result);
+    boundlessTable.codeRed();
+};
+
+main().then((r) => infTableFactory.codeRed());
