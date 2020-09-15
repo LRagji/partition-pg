@@ -668,11 +668,23 @@ const writeConfigParamsDB1 = {
     application_name: "e2e Test",
     max: 2 //2 Writer
 };
-let TypeId = 5;
+const readConfigParamsDB2 = {
+    connectionString: "postgres://postgres:@localhost:5432/Infinity-2",
+    application_name: "e2e Test",
+    max: 4 //4 readers
+};
+const writeConfigParamsDB2 = {
+    connectionString: "postgres://postgres:@localhost:5432/Infinity-2",
+    application_name: "e2e Test",
+    max: 2 //2 Writer
+};
+let TypeId = 7;
 let boundlessTable;
 let main = async () => {
     if (TypeId == undefined) {
         let resourceId = await infTableFactory.registerResource(readConfigParamsDB1, writeConfigParamsDB1, 1000, 100);
+        console.log("Resource Id:" + resourceId);
+        resourceId = await infTableFactory.registerResource(readConfigParamsDB2, writeConfigParamsDB2, 1000, 100);
         console.log("Resource Id:" + resourceId);
         boundlessTable = await infTableFactory.createTable(Table1);
         TypeId = boundlessTable.TableIdentifier;
@@ -683,7 +695,7 @@ let main = async () => {
         boundlessTable = await infTableFactory.loadTable(TypeId);
     }
 
-    let ctr = 40000;
+    let ctr = 150000;
     let payload = [];
     console.time("Payload Generation");
     while (ctr > 0) {
@@ -723,8 +735,21 @@ main().then((r) => {
 //     PRIMARY KEY ("Id")
 // );
 
-//40K
+//SQL for Reindexing
+//SELECT split_part(tablename,'-',1) as "TypeId",split_part(tablename,'-',2) as "DBId",split_part(tablename,'-',3)as "TableId",tablename 
+//FROM pg_catalog.pg_tables where tablename like '7-9%'
+
+//40K 10K/Sec
 // Payload Generation: 6.198ms
 // Acquiring Identity: 62.97509765625ms
 // Transforming: 48.083ms
 // Inserting: 3284.655ms
+
+//150K
+//Payload Generation: 31.56494140625ms
+// Identity: 213.784ms
+// Transform: 314.534ms
+// PG: 14188.743896484375ms
+// Insertion: 14717.776ms
+
+//TODO:Defect for only 750 Tables out of 1000 

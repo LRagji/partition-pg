@@ -227,8 +227,11 @@ class InfinityTable {
     }
 
     async bulkInsert(payload) {
+        console.time("Identity");
         let identities = await this.#generateIdentity(payload.length);
+        console.timeEnd("Identity");
 
+        console.time("Transform");
         let lastChange = null;
         let groupedPayloads = payload.reduceRight((groups, value, idx) => {
             idx = idx + 1;
@@ -261,7 +264,9 @@ class InfinityTable {
             }
             return groups;
         }, new Map());
+        console.timeEnd("Transform");
 
+        console.time("PG");
         let results = { "failures": [], "success": [] };
         let DBIds = Array.from(groupedPayloads.keys());
         for (let dbIdx = 0; dbIdx < DBIds.length; dbIdx++) {
@@ -290,6 +295,7 @@ class InfinityTable {
                 }
             }
         }
+        console.timeEnd("PG");
         return results;
     }
 
