@@ -5,8 +5,8 @@ local rows_per_table = tonumber(ARGV[3])
 
 while(max_tables>0)
 do
-    redis.call("ZADD",inventory_key,max_tables,db_id .. "," .. max_tables ..  "," .. rows_per_table)
+    redis.call("RPUSH",inventory_key,db_id .. "," .. max_tables ..  "," .. rows_per_table)
     max_tables = max_tables-1
 end
 
---eval /Users/laukikragji/Documents/Git/Local/partition-pg/lua/load-resources.lua Inventory , 1 100000 100
+--redis-cli --eval /Users/laukikragji/Documents/Git/Local/partition-pg/lua/load-resources.lua Inventory , 1 100000 100

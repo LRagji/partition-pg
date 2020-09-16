@@ -678,7 +678,7 @@ const writeConfigParamsDB2 = {
     application_name: "e2e Test",
     max: 2 //2 Writer
 };
-let TypeId = 7;
+let TypeId = 13;
 let boundlessTable;
 let main = async () => {
     if (TypeId == undefined) {
@@ -736,8 +736,10 @@ main().then((r) => {
 // );
 
 //SQL for Reindexing
-//SELECT split_part(tablename,'-',1) as "TypeId",split_part(tablename,'-',2) as "DBId",split_part(tablename,'-',3)as "TableId",tablename 
-//FROM pg_catalog.pg_tables where tablename like '7-9%'
+// SELECT split_part(tablename,'-',1) as "TypeId",split_part(tablename,'-',2) as "DBId",split_part(tablename,'-',3)as "TableId",
+// tablename, n_live_tup as "ERows"
+// FROM pg_catalog.pg_tables as "T" JOIN pg_stat_user_tables as "S" on "T".tablename="S".relname
+// where tablename like '13-%' and n_live_tup !=100
 
 //40K 10K/Sec
 // Payload Generation: 6.198ms

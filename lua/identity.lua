@@ -16,8 +16,8 @@ end
 local loadNextResource =  function (type_key)
     redis.call("DEL",type_key)
     if redis.call("EXISTS",inventory_key) == 0 then return {-1,"No resources available"} end
-    local next_resource = redis.call("ZPOPMIN",inventory_key,1)
-    local new_resource_def = parseResourceDefinition(next_resource[1])
+    local next_resource = redis.call("LPOP",inventory_key)
+    local new_resource_def = parseResourceDefinition(next_resource)
     redis.call("HMSET",type_key, "DBID", new_resource_def[1], "TBID",new_resource_def[2], "ROWS", new_resource_def[3], "OFF", "1")
     return {0}
 end
