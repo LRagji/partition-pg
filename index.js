@@ -678,7 +678,7 @@ const writeConfigParamsDB2 = {
     application_name: "e2e Test",
     max: 2 //2 Writer
 };
-let TypeId = 13;
+let TypeId = 5;
 let boundlessTable;
 let main = async () => {
     if (TypeId == undefined) {
@@ -695,11 +695,11 @@ let main = async () => {
         boundlessTable = await infTableFactory.loadTable(TypeId);
     }
 
-    let ctr = 150000;
+    let ctr = 10;
     let payload = [];
     console.time("Payload Generation");
     while (ctr > 0) {
-        payload.push([ctr, ctr, ctr, ctr])
+        payload.push({ "time": ctr, "tagid": ctr, "value": ctr, "quality": ctr })
         ctr--;
     }
     console.timeEnd("Payload Generation");
@@ -708,12 +708,17 @@ let main = async () => {
     let result = await boundlessTable.bulkInsert(payload);
     console.timeEnd("Insertion");
 
+    if (result.failures.length > 0) {
+        console.error("Failed:" + result.failures[0]);
+    }
+    else {
+        console.log("Sucess:" + result.success.length);
+    }
     //console.log(result);
     boundlessTable.codeRed();
 };
 
 main().then((r) => {
-  
     infTableFactory.codeRed();
 });
 

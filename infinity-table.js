@@ -6,9 +6,12 @@ const pgp = require('pg-promise')();
 const inventory_key = "Inventory";
 const default_schema = "public";
 pgp.pg.types.setTypeParser(20, BigInt); // This is for serialization bug of BigInts as strings.
-
+const InfinityStampTag = "InfStamp";
+const InfinityIdTag = "InfId";
+const PrimaryTag = "primary";
 module.exports = class InfinityTableFactory {
     #pgReadConfigParams
+    #pgWriteConfigParams
     #indexerRedisConnectionString
     #redisClient
     #scriptingEngine
@@ -17,6 +20,7 @@ module.exports = class InfinityTableFactory {
 
     constructor(indexerRedisConnectionString, pgReadConfigParams, pgWriteConfigParams) {
         this.#pgReadConfigParams = pgReadConfigParams;
+        this.#pgWriteConfigParams = pgWriteConfigParams;
         this.#indexerRedisConnectionString = indexerRedisConnectionString;
         this.#redisClient = new redisType(indexerRedisConnectionString);
         this.#scriptingEngine = new scripto(this.#redisClient);
@@ -54,21 +58,63 @@ module.exports = class InfinityTableFactory {
 
     async createTable(tableDefinition) {
 
-        return await this.#configDBWriter.tx(async trans => {
+        const infinityIdColumn = {
+            "name": "InfId",
+            "datatype": "bigint",
+            "filterable": { "sorted": "asc" },
+            "tag": InfinityIdTag
+        };
+        const infinityStampColumn = {
+            "name": "InfStamp",
+            "datatype": "bigint",
+            "filterable": { "sorted": "asc" },
+            "tag": InfinityStampTag
+        };
+        let userDefinedPK = false;
+        let userDefinedPKDatatype;
+        const totalPrimaryColumns = tableDefinition.reduce((acc, e) => acc + (e.tag === PrimaryTag ? 1 : 0), 0);
+        if (totalPrimaryColumns > 1) throw new Error("Table cannot have multiple primary columns");
+        if (totalPrimaryColumns === 0) tableDefinition.unshift(infinityIdColumn);
+        if (totalPrimaryColumns === 1) {
+            console.warn("It is recommended to use system generated infinity id for better scalling and performance.");
+            userDefinedPK = true;
+            userDefinedPKDatatype = tableDefinition.find(e => e.tag === PrimaryTag)["datatype"];
+        }
+        const totalInfinityStamoColumns = tableDefinition.reduce((acc, e) => acc + (e.tag === InfinityStampTag ? 1 : 0), 0);
+        if (totalInfinityStamoColumns > 1) throw new Error("Table cannot have multiple InfitiyStamp columns");
+        if (totalInfinityStamoColumns === 0) tableDefinition.push(infinityStampColumn);
+        if (totalInfinityStamoColumns == 1) {
+            const infinityStampColumn = tableDefinition.find(e => e.tag === InfinityStampTag);
+            if (infinityStampColumn.datatype !== "bigint") throw new Error("InfitiyStamp columns should have datatype as bigint.");
+        }
 
-            let defaultSystemIdColumn = {
-                "name": "InfId",
-                "datatype": "bigint",
-                "filterable": { "sorted": "asc" },
-                "primary": true
-            };
-
-            tableDefinition.unshift(defaultSystemIdColumn)
+        const tableId = await this.#configDBWriter.tx(async trans => {
 
             let tIdentifier = await trans.one('INSERT INTO "Types" ("Def") values ($1) RETURNING "Id";', [tableDefinition]);
-
-            return new InfinityTable(this.#pgReadConfigParams, this.#indexerRedisConnectionString, tIdentifier.Id, tableDefinition);
+            if (userDefinedPK) {
+                await trans.none(`CREATE TABLE public."${tIdentifier.Id}-PK"
+                (
+                    "UserPK" ${userDefinedPKDatatype} NOT NULL,
+                    "CInfID" text NOT NULL,
+                    PRIMARY KEY ("UserPK")
+                );`); //THIS table should be partitioned with HASH for 20CR rows
+            }
+            await trans.none(`CREATE TABLE public."${tIdentifier.Id}-Min"
+            (
+                "InfStamp" bigint NOT NULL,
+                "PInfID" text NOT NULL,
+                CONSTRAINT "${tIdentifier.Id}-Min-PK" PRIMARY KEY ("PInfID")
+            );`);
+            await trans.none(`CREATE TABLE public."${tIdentifier.Id}-Max"
+            (
+                "InfStamp" bigint NOT NULL,
+                "PInfID" text NOT NULL,
+                CONSTRAINT "${tIdentifier.Id}-Max-PK" PRIMARY KEY ("PInfID")
+            );`); //THIS table should be partitioned with HASH for 20CR rows
+            return tIdentifier.Id;
         });
+
+        return new InfinityTable(this.#pgReadConfigParams, this.#pgWriteConfigParams, this.#indexerRedisConnectionString, tableId, tableDefinition);
     }
 
     async loadTable(TableIdentifier) {
@@ -77,20 +123,22 @@ module.exports = class InfinityTableFactory {
             throw new Error(`Table with id does ${TableIdentifier} not exists.`);
         }
         tableDef = tableDef.Def.map(e => JSON.parse(e));
-        return new InfinityTable(this.#pgReadConfigParams, this.#indexerRedisConnectionString, TableIdentifier, tableDef);
+        return new InfinityTable(this.#pgReadConfigParams, this.#pgWriteConfigParams, this.#indexerRedisConnectionString, TableIdentifier, tableDef);
     }
 }
 
 class InfinityTable {
     #configDBReader
+    #configDBWriter
     #def
     #connectionMap
     #redisClient
     #scriptingEngine
     #columnsNames
 
-    constructor(configReaderConnectionParams, indexerRedisConnectionString, systemTableIdentifier, tableDefinition) {
+    constructor(configReaderConnectionParams, configWriterConnectionParams, indexerRedisConnectionString, systemTableIdentifier, tableDefinition) {
         this.#configDBReader = pgp(configReaderConnectionParams);
+        this.#configDBWriter = pgp(configWriterConnectionParams);
         this.TableIdentifier = systemTableIdentifier;
         this.#def = tableDefinition;
         this.#connectionMap = new Map();
@@ -111,6 +159,9 @@ class InfinityTable {
         this.#generateSqlTableColumns = this.#generateSqlTableColumns.bind(this);
         this.#generateSqlIndexColumns = this.#generateSqlIndexColumns.bind(this);
         this.#generatePrimaryKeyConstraintColumns = this.#generatePrimaryKeyConstraintColumns.bind(this);
+        this.#indexPrimarykey = this.#indexPrimarykey.bind(this);
+        this.#indexInfinityStampMin = this.#indexInfinityStampMin.bind(this);
+        this.#indexInfinityStampMax = this.#indexInfinityStampMax.bind(this);
 
         this.bulkInsert = this.bulkInsert.bind(this);
 
@@ -163,7 +214,7 @@ class InfinityTable {
     }
 
     #generatePrimaryKeyConstraintColumns = (completeSql, schema) => {
-        if (schema.primary === true) {
+        if (schema.tag === InfinityIdTag || schema.tag === PrimaryTag) {
             completeSql += pgp.as.format("$[name:alias],", schema);
         }
         return completeSql;
@@ -219,14 +270,39 @@ class InfinityTable {
 
     #sqlTransform = (tableName, payload) => {
 
-        let valuesString = payload.reduce((valuesString, element) => valuesString += `(${element.V.join(",")}),`, "");
+        let valuesString = payload.reduce((valuesString, element) => valuesString += `(${element.Values.join(",")}),`, "");
         let columns = this.#columnsNames.reduce((acc, e) => acc + `${pgp.as.format('$1:alias', [e])},`, "");
         columns = columns.slice(0, -1);
         valuesString = valuesString.slice(0, -1)
         return `INSERT INTO "${default_schema}"."${tableName}" (${columns}) VALUES ${valuesString} RETURNING *`;
     }
 
+    #indexPrimarykey = (tableName, payload) => {
+
+        let valuesString = payload.reduce((valuesString, element) => valuesString += pgp.as.format("($1,$2),", [element.UserPk, element.InfinityRowId]), "");
+        valuesString = valuesString.slice(0, -1)
+        return `INSERT INTO "${default_schema}"."${tableName}" ("UserPK","CInfID") VALUES ${valuesString};`;
+    }
+
+    #indexInfinityStampMin = (tableName, payload, PInfID) => {
+
+        let min = payload.reduce((min, element) => Math.min(min, element.InfinityStamp), Number.MAX_VALUE);
+        return `INSERT INTO "${default_schema}"."${tableName}" ("InfStamp","PInfID") VALUES (${min},'${PInfID}') ON CONFLICT ON CONSTRAINT "${tableName + "-PK"}"
+        DO UPDATE SET "InfStamp" = LEAST(EXCLUDED."InfStamp","${tableName}"."InfStamp")`;
+    }
+
+    #indexInfinityStampMax = (tableName, payload, PInfID) => {
+
+        let max = payload.reduce((max, element) => Math.max(max, element.InfinityStamp), Number.MIN_VALUE);
+        return `INSERT INTO "${default_schema}"."${tableName}" ("InfStamp","PInfID") VALUES (${max},'${PInfID}') ON CONFLICT ON CONSTRAINT "${tableName + "-PK"}"
+        DO UPDATE SET "InfStamp" = GREATEST(EXCLUDED."InfStamp","${tableName}"."InfStamp")`;
+    }
+
     async bulkInsert(payload) {
+        //This code has run away complexity dont trip on it ;)
+        let userDefinedPk = false;
+        if (payload.length > 10000) throw new Error("Currently ingestion rate of 10K/sec is only supported!");
+
         console.time("Identity");
         let identities = await this.#generateIdentity(payload.length);
         console.timeEnd("Identity");
@@ -243,10 +319,27 @@ class InfinityTable {
             let dbId = lastChange[1];
             let tableId = lastChange[2];
             let scopedRowId = lastChange[3];
-            let rowId = `${this.TableIdentifier}-${dbId}-${tableId}-${scopedRowId}`;
+            let completeRowId = `${this.TableIdentifier}-${dbId}-${tableId}-${scopedRowId}`;
             lastChange[3]++;
-            value.unshift(scopedRowId);
-            let item = { "Id": rowId, "V": value };
+            let item = { "InfinityRowId": completeRowId, "Values": [], "InfinityStamp": Date.now() };
+
+            this.#def.forEach(columnDef => {
+                let colValue = value[columnDef.name];
+                if (colValue == undefined) {
+                    if (columnDef.tag === PrimaryTag) throw new Error("Primary field cannot be null:" + columnDef.name);//This should be done before to save identities
+                    if (columnDef.tag === InfinityIdTag) colValue = scopedRowId;
+                    if (columnDef.tag === InfinityStampTag) colValue = item.InfinityStamp;
+                }
+                else {
+                    if (columnDef.tag === PrimaryTag) {
+                        item["UserPk"] = colValue;
+                        userDefinedPk = true;
+                    }
+                    if (columnDef.tag === InfinityStampTag) item.InfinityStamp = colValue;
+                }
+                item.Values.push(colValue);
+            });
+
             let dbgroup = groups.get(dbId);
             if (dbgroup == undefined) {
                 let temp = new Map();
@@ -279,9 +372,21 @@ class InfinityTable {
                 try {
                     const tableName = await this.#teraformTableSpace(dbId, tableId);
                     const DBWritter = this.#connectionMap.get(dbId)["W"];
-                    const insertedRows = await DBWritter.tx(async trans => {
+                    const insertedRows = await DBWritter.tx(async instanceTrans => {
+
+                        await this.#configDBWriter.tx(async indexTran => {
+                            if (userDefinedPk) {
+                                let sql = this.#indexPrimarykey((this.TableIdentifier + "-PK"), items);
+                                await indexTran.none(sql);
+                            }
+                            let sql = this.#indexInfinityStampMin((this.TableIdentifier + "-Min"), items, tableName);
+                            await indexTran.none(sql);
+                            sql = this.#indexInfinityStampMax((this.TableIdentifier + "-Max"), items, tableName);
+                            await indexTran.none(sql);
+                        });
+
                         let sql = this.#sqlTransform(tableName, items);
-                        return trans.many(sql);
+                        return instanceTrans.many(sql);
                     });
                     results.success.push(insertedRows.map(e => {
                         e.InfId = tableName + "-" + e.InfId;
